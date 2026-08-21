@@ -725,14 +725,87 @@ function exportArticleStatsPDF(){
   });
   doc.save(`taksis_order-poso-ana-kodiko-${todayISO()}.pdf`);
 }
+// Ταξινομεί/φιλτράρει τις παρτίδες stock σύμφωνα με την τρέχουσα προβολή της Σύνοψης stock
+// (Ανά προϊόν / κωδικό / κατηγορία / ημ. λήξης / επόμενες 30 ημέρες), ώστε η εξαγωγή να
+// αντιστοιχεί ακριβώς σε αυτό που βλέπει ο χρήστης στην οθόνη.
+function getStockExportPairs(){
+  let pairs = state.stockUnits
+    .filter(u=>(u.volume_boxes>0||u.weight_kg>0))
+    .map(u=>({u, a: state.articles.find(x=>x.code===u.article_code)}));
+
+  const view = state.stockView;
+  if (view === "expiry"){
+    pairs.sort((x,y)=>(x.u.bbd||"9999-99-99").localeCompare(y.u.bbd||"9999-99-99"));
+  } else if (view === "month"){
+    const fromDate = todayISO();
+    const toDate = new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
+    pairs = pairs.filter(p=>p.u.bbd && p.u.bbd>=fromDate && p.u.bbd<=toDate);
+    pairs.sort((x,y)=>x.u.bbd.localeCompare(y.u.bbd));
+  } else if (view === "code"){
+    pairs.sort((x,y)=>naturalCodeSort(x.u.article_code,y.u.article_code) || (x.u.bbd||"").localeCompare(y.u.bbd||""));
+  } else if (view === "category"){
+    pairs.sort((x,y)=>{
+      const cx = classifyArticle(x.u.article_code), cy = classifyArticle(y.u.article_code);
+      const kx = CATEGORY_ORDER.findIndex(([t,c])=>t===cx.temp&&c===cx.cut);
+      const ky = CATEGORY_ORDER.findIndex(([t,c])=>t===cy.temp&&c===cy.cut);
+      const rx = kx<0?999:kx, ry = ky<0?999:ky;
+      if (rx!==ry) return rx-ry;
+      return (x.a?x.a.name:"").localeCompare(y.a?y.a.name:"", "el");
+    });
+  } else { // "product" (default)
+    pairs.sort((x,y)=>(x.a?x.a.name:"").localeCompare(y.a?y.a.name:"", "el") || (x.u.bbd||"").localeCompare(y.u.bbd||""));
+  }
+  return pairs;
+}
+function stockViewLabel(view){
+  return ({product:"Ανά προϊόν", code:"Ανά κωδικό", category:"Ανά κατηγορία", expiry:"Ανά ημ. λήξης", month:"Λήγουν τις επόμενες 30 ημέρες"})[view] || view;
+}
 function exportStockCSV(){
-  const headers = ["SSCC","Κωδικός είδους","Είδος","Ζώνη","Lot","BBD","Κιβώτια","Κιλά","Reference"];
-  const rows = state.stockUnits.map(su=>{
-    const a = state.articles.find(x=>x.code===su.article_code);
-    return [su.sscc, su.article_code, a?a.name:"", su.zone||"", su.lot_code||"", su.bbd?formatDateEL(su.bbd):"", su.volume_boxes, su.weight_kg, su.reference||""];
+  const pairs = getStockExportPairs();
+  if (pairs.length===0) return showToast("Δεν υπάρχουν δεδομένα stock για εξαγωγή");
+  const includeCategory = state.stockView === "category";
+  const headers = ["SSCC","Κωδικός είδους","Είδος", ...(includeCategory?["Κατηγορία"]:[]), "Ζώνη","Lot","BBD","Κιβώτια","Κιλά","Reference"];
+  const rows = pairs.map(({u,a})=>[
+    u.sscc, u.article_code, a?a.name:"",
+    ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
+    u.zone||"", u.lot_code||"", u.bbd?formatDateEL(u.bbd):"", u.volume_boxes, u.weight_kg, u.reference||""
+  ]);
+  downloadCSV(`taksis_order-stock-${state.stockView}-${todayISO()}.csv`, headers, rows);
+}
+function exportStockPDF(){
+  const pairs = getStockExportPairs();
+  if (pairs.length===0) return showToast("Δεν υπάρχουν δεδομένα stock για εξαγωγή");
+  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  const { jsPDF } = window.jspdf;
+  const includeCategory = state.stockView === "category";
+  const doc = new jsPDF({orientation:"landscape"});
+  setupGreekFont(doc);
+  doc.setFontSize(14);
+  doc.text(`Απόθεμα — ${stockViewLabel(state.stockView)}`, 14, 15);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`Εξαγωγή: ${formatDateEL(todayISO())}`, 14, 21);
+
+  const head = ["Κωδ.","Είδος", ...(includeCategory?["Κατηγορία"]:[]), "Ζώνη","Lot","BBD","Κιβ.","Κιλά","Reference"];
+  const body = pairs.map(({u,a})=>[
+    u.article_code, a?a.name:"",
+    ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
+    u.zone||"", u.lot_code||"", u.bbd?formatDateEL(u.bbd):"", String(u.volume_boxes), Number(u.weight_kg).toFixed(1), u.reference||""
+  ]);
+  doc.autoTable({
+    startY: 26,
+    head: [head],
+    body,
+    styles:{fontSize:8, font:"NotoSans"},
+    headStyles:{fillColor:[8,80,65], textColor:255, font:"NotoSans", fontStyle:"bold"},
   });
-  if (rows.length===0) return showToast("Δεν υπάρχουν δεδομένα stock για εξαγωγή");
-  downloadCSV(`taksis_order-stock-${todayISO()}.csv`, headers, rows);
+  const totalBoxes = pairs.reduce((s,{u})=>s+(Number(u.volume_boxes)||0),0);
+  const totalWeight = pairs.reduce((s,{u})=>s+(Number(u.weight_kg)||0),0);
+  const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || 30;
+  doc.setFontSize(10);
+  doc.setTextColor(20);
+  doc.text(`${pairs.length} παρτίδες · ${totalBoxes} κιβ. · ${totalWeight.toFixed(1)} κιλά`, 14, finalY+8);
+  doc.save(`taksis_order-stock-${state.stockView}-${todayISO()}.pdf`);
 }
 
 /* ---------------- render ---------------- */
@@ -1623,7 +1696,7 @@ function renderStock(){
     ["code","Ανά κωδικό"],
     ["category","Ανά κατηγορία"],
     ["expiry","Ανά ημ. λήξης"],
-    ["month","Λήγει τον μήνα"],
+    ["month","Λήγουν τις επόμενες 30 ημέρες"],
   ];
 
   let listHTML = "";
@@ -1685,10 +1758,11 @@ function renderStock(){
     }).join("");
   }
   else if (state.stockView === "month"){
-    const monthPrefix = todayISO().slice(0,7); // YYYY-MM
-    const lotsThisMonth = state.stockUnits.filter(u=>u.bbd && u.bbd.startsWith(monthPrefix) && (u.volume_boxes>0||u.weight_kg>0))
+    const fromDate = todayISO();
+    const toDate = new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
+    const lotsThisMonth = state.stockUnits.filter(u=>u.bbd && u.bbd>=fromDate && u.bbd<=toDate && (u.volume_boxes>0||u.weight_kg>0))
       .sort((a,b)=>a.bbd.localeCompare(b.bbd));
-    listHTML = lotsThisMonth.length===0 ? `<p class="center-note">Καμία παρτίδα δεν λήγει αυτόν τον μήνα.</p>` : lotsThisMonth.map(l=>{
+    listHTML = lotsThisMonth.length===0 ? `<p class="center-note">Καμία παρτίδα δεν λήγει τις επόμενες 30 ημέρες.</p>` : lotsThisMonth.map(l=>{
       const a = state.articles.find(x=>x.code===l.article_code);
       const days = daysUntil(l.bbd);
       const cls = days<0 ? "expired" : days<=EXPIRY_WARNING_DAYS ? "expiring" : "";
@@ -1707,8 +1781,9 @@ function renderStock(){
 
   return `
     <div class="stack">
-      <div class="row" style="justify-content:flex-end;">
-        <button class="btn" id="exportStockBtn">⇩ Εξαγωγή CSV</button>
+      <div class="row" style="justify-content:flex-end;gap:6px;">
+        <button class="btn" id="exportStockBtn">⇩ CSV</button>
+        <button class="btn" id="exportStockPdfBtn">⇩ PDF</button>
       </div>
       <div class="grid2">
         <div class="stat"><div class="muted">Σύνολο κιβωτίων</div><div class="v">${totalBoxes}</div></div>
@@ -2180,6 +2255,8 @@ function bindEvents(){
   // stock tab
   const exportStockBtn = document.getElementById("exportStockBtn");
   if (exportStockBtn) exportStockBtn.onclick = exportStockCSV;
+  const exportStockPdfBtn = document.getElementById("exportStockPdfBtn");
+  if (exportStockPdfBtn) exportStockPdfBtn.onclick = exportStockPDF;
 
   // trash tab
   const TRASH_TABLE_CONFIG = {
