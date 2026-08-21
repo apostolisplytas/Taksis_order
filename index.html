@@ -246,6 +246,7 @@ let state = {
   showImportStock: false, showImportC: false,
   expandedArticle: null, addingLotFor: null, expandedCustomer: null, showQuickOrder: false, quickOrderDraft: "",
   historyView: "day", historyDate: todayISO(), historyCustomer: "", stockView: "product",
+  stockFilterText: "", stockFilterCategory: "", stockFilterFrom: "", stockFilterTo: "",
   historyDateMode: "single", historyRange: null,
   selectedOrders: new Set(),
   expandedDashCustomers: new Set(),
@@ -734,16 +735,27 @@ function getStockExportPairs(){
     .map(u=>({u, a: state.articles.find(x=>x.code===u.article_code)}));
 
   const view = state.stockView;
+  const textFilterMatches = (u,a) => {
+    if (!state.stockFilterText.trim()) return true;
+    const q = state.stockFilterText.trim().toLowerCase();
+    return u.article_code.toLowerCase().includes(q) || (a && a.name.toLowerCase().includes(q));
+  };
   if (view === "expiry"){
+    if (state.stockFilterFrom) pairs = pairs.filter(p=>p.u.bbd && p.u.bbd>=state.stockFilterFrom);
+    if (state.stockFilterTo) pairs = pairs.filter(p=>p.u.bbd && p.u.bbd<=state.stockFilterTo);
     pairs.sort((x,y)=>(x.u.bbd||"9999-99-99").localeCompare(y.u.bbd||"9999-99-99"));
   } else if (view === "month"){
-    const fromDate = todayISO();
-    const toDate = new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
+    const fromDate = state.stockFilterFrom || todayISO();
+    const toDate = state.stockFilterTo || new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
     pairs = pairs.filter(p=>p.u.bbd && p.u.bbd>=fromDate && p.u.bbd<=toDate);
     pairs.sort((x,y)=>x.u.bbd.localeCompare(y.u.bbd));
   } else if (view === "code"){
+    pairs = pairs.filter(p=>textFilterMatches(p.u,p.a));
     pairs.sort((x,y)=>naturalCodeSort(x.u.article_code,y.u.article_code) || (x.u.bbd||"").localeCompare(y.u.bbd||""));
   } else if (view === "category"){
+    if (state.stockFilterCategory){
+      pairs = pairs.filter(p=>{ const c=classifyArticle(p.u.article_code); return (c.temp+"|"+c.cut)===state.stockFilterCategory; });
+    }
     pairs.sort((x,y)=>{
       const cx = classifyArticle(x.u.article_code), cy = classifyArticle(y.u.article_code);
       const kx = CATEGORY_ORDER.findIndex(([t,c])=>t===cx.temp&&c===cx.cut);
@@ -753,6 +765,7 @@ function getStockExportPairs(){
       return (x.a?x.a.name:"").localeCompare(y.a?y.a.name:"", "el");
     });
   } else { // "product" (default)
+    pairs = pairs.filter(p=>textFilterMatches(p.u,p.a));
     pairs.sort((x,y)=>(x.a?x.a.name:"").localeCompare(y.a?y.a.name:"", "el") || (x.u.bbd||"").localeCompare(y.u.bbd||""));
   }
   return pairs;
@@ -1699,32 +1712,64 @@ function renderStock(){
     ["month","Λήγουν τις επόμενες 30 ημέρες"],
   ];
 
+  const subtotalOf = (arts) => arts.reduce((acc,a)=>{
+    const {boxes, weight} = articleTotals(a.code);
+    acc.boxes += boxes; acc.weight += weight; acc.value += weight*(a.price_per_kg||0);
+    return acc;
+  }, {boxes:0, weight:0, value:0});
+  const subtotalOfLots = (lots) => lots.reduce((acc,l)=>{
+    const a = state.articles.find(x=>x.code===l.article_code);
+    acc.boxes += Number(l.volume_boxes)||0; acc.weight += Number(l.weight_kg)||0;
+    acc.value += (Number(l.weight_kg)||0)*(a?.price_per_kg||0);
+    return acc;
+  }, {boxes:0, weight:0, value:0});
+  const textFilterMatchesArticle = (a) => {
+    if (!state.stockFilterText.trim()) return true;
+    const q = state.stockFilterText.trim().toLowerCase();
+    return a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
+  };
+
   let listHTML = "";
   let visibleCodes = []; // for expand-all/collapse-all scoping
-  if (state.stockView === "product"){
-    const sorted = [...state.articles].sort((a,b)=>a.name.localeCompare(b.name,'el'));
+  let sub = {boxes:0, weight:0, value:0};
+  let filterBarHTML = "";
+
+  if (state.stockView === "product" || state.stockView === "code"){
+    filterBarHTML = `<input id="stockFilterText" placeholder="Φίλτρο κωδικού ή ονόματος..." value="${esc(state.stockFilterText)}" />`;
+    let sorted = state.articles.filter(textFilterMatchesArticle);
+    sorted = state.stockView==="product"
+      ? sorted.sort((a,b)=>a.name.localeCompare(b.name,'el'))
+      : sorted.sort((a,b)=>naturalCodeSort(a.code,b.code));
     visibleCodes = sorted.map(a=>a.code);
-    listHTML = sorted.length===0 ? `<p class="center-note">Δεν υπάρχουν είδη.</p>` : sorted.map(articleCardHTML).join("");
-  }
-  else if (state.stockView === "code"){
-    const sorted = [...state.articles].sort((a,b)=>naturalCodeSort(a.code,b.code));
-    visibleCodes = sorted.map(a=>a.code);
-    listHTML = sorted.length===0 ? `<p class="center-note">Δεν υπάρχουν είδη.</p>` : sorted.map(articleCardHTML).join("");
+    sub = subtotalOf(sorted);
+    listHTML = sorted.length===0 ? `<p class="center-note">${state.stockFilterText.trim()?"Κανένα αποτέλεσμα.":"Δεν υπάρχουν είδη."}</p>` : sorted.map(articleCardHTML).join("");
   }
   else if (state.stockView === "category"){
-    const groups = {};
+    const allGroups = {};
     state.articles.forEach(a=>{
       const {temp, cut} = classifyArticle(a.code);
       const key = temp+"|"+cut;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(a);
+      if (!allGroups[key]) allGroups[key] = [];
+      allGroups[key].push(a);
     });
-    const orderedKeys = CATEGORY_ORDER.map(([t,c])=>t+"|"+c).filter(k=>groups[k]);
-    Object.keys(groups).forEach(k=>{ if (!orderedKeys.includes(k)) orderedKeys.push(k); });
-    visibleCodes = state.articles.map(a=>a.code);
-    listHTML = orderedKeys.length===0 ? `<p class="center-note">Δεν υπάρχουν είδη.</p>` : orderedKeys.map(key=>{
+    const allKeysOrdered = CATEGORY_ORDER.map(([t,c])=>t+"|"+c).filter(k=>allGroups[k]);
+    Object.keys(allGroups).forEach(k=>{ if (!allKeysOrdered.includes(k)) allKeysOrdered.push(k); });
+    filterBarHTML = `
+      <select id="stockFilterCategory">
+        <option value="">Όλες οι κατηγορίες</option>
+        ${allKeysOrdered.map(key=>{
+          const [t,c] = key.split("|");
+          return `<option value="${key}" ${state.stockFilterCategory===key?'selected':''}>${t} · ${c}</option>`;
+        }).join("")}
+      </select>`;
+    const groups = state.stockFilterCategory ? {[state.stockFilterCategory]: allGroups[state.stockFilterCategory]||[]} : allGroups;
+    const orderedKeys = state.stockFilterCategory ? [state.stockFilterCategory] : allKeysOrdered;
+    visibleCodes = Object.values(groups).flat().map(a=>a.code);
+    sub = subtotalOf(Object.values(groups).flat());
+    listHTML = orderedKeys.length===0 || visibleCodes.length===0 ? `<p class="center-note">Δεν υπάρχουν είδη σε αυτή την κατηγορία.</p>` : orderedKeys.map(key=>{
       const [temp, cut] = key.split("|");
-      const arts = groups[key].sort((a,b)=>a.name.localeCompare(b.name,'el'));
+      const arts = (groups[key]||[]).sort((a,b)=>a.name.localeCompare(b.name,'el'));
+      if (arts.length===0) return "";
       const groupBoxes = arts.reduce((s,a)=>s+articleTotals(a.code).boxes,0);
       const groupWeight = arts.reduce((s,a)=>s+articleTotals(a.code).weight,0);
       const tempCls = temp==="Frozen" ? "frost" : temp==="Fresh" ? "fresh" : "";
@@ -1741,8 +1786,16 @@ function renderStock(){
     }).join("");
   }
   else if (state.stockView === "expiry"){
-    const lotsWithStock = state.stockUnits.filter(u=>(u.volume_boxes>0||u.weight_kg>0))
-      .sort((a,b)=>(a.bbd||"9999-99-99").localeCompare(b.bbd||"9999-99-99"));
+    filterBarHTML = `
+      <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <div><label>Από</label><input type="date" id="stockFilterFrom" value="${state.stockFilterFrom||""}" style="width:auto;" /></div>
+        <div><label>Έως</label><input type="date" id="stockFilterTo" value="${state.stockFilterTo||""}" style="width:auto;" /></div>
+      </div>`;
+    let lotsWithStock = state.stockUnits.filter(u=>(u.volume_boxes>0||u.weight_kg>0));
+    if (state.stockFilterFrom) lotsWithStock = lotsWithStock.filter(u=>u.bbd && u.bbd>=state.stockFilterFrom);
+    if (state.stockFilterTo) lotsWithStock = lotsWithStock.filter(u=>u.bbd && u.bbd<=state.stockFilterTo);
+    lotsWithStock = lotsWithStock.sort((a,b)=>(a.bbd||"9999-99-99").localeCompare(b.bbd||"9999-99-99"));
+    sub = subtotalOfLots(lotsWithStock);
     listHTML = lotsWithStock.length===0 ? `<p class="center-note">Δεν υπάρχει διαθέσιμο απόθεμα.</p>` : lotsWithStock.map(l=>{
       const a = state.articles.find(x=>x.code===l.article_code);
       const days = l.bbd ? daysUntil(l.bbd) : null;
@@ -1758,11 +1811,19 @@ function renderStock(){
     }).join("");
   }
   else if (state.stockView === "month"){
-    const fromDate = todayISO();
-    const toDate = new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
+    const defaultFrom = todayISO();
+    const defaultTo = new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
+    filterBarHTML = `
+      <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <div><label>Από</label><input type="date" id="stockFilterFrom" value="${state.stockFilterFrom||defaultFrom}" style="width:auto;" /></div>
+        <div><label>Έως</label><input type="date" id="stockFilterTo" value="${state.stockFilterTo||defaultTo}" style="width:auto;" /></div>
+      </div>`;
+    const fromDate = state.stockFilterFrom || defaultFrom;
+    const toDate = state.stockFilterTo || defaultTo;
     const lotsThisMonth = state.stockUnits.filter(u=>u.bbd && u.bbd>=fromDate && u.bbd<=toDate && (u.volume_boxes>0||u.weight_kg>0))
       .sort((a,b)=>a.bbd.localeCompare(b.bbd));
-    listHTML = lotsThisMonth.length===0 ? `<p class="center-note">Καμία παρτίδα δεν λήγει τις επόμενες 30 ημέρες.</p>` : lotsThisMonth.map(l=>{
+    sub = subtotalOfLots(lotsThisMonth);
+    listHTML = lotsThisMonth.length===0 ? `<p class="center-note">Καμία παρτίδα δεν λήγει σε αυτό το διάστημα.</p>` : lotsThisMonth.map(l=>{
       const a = state.articles.find(x=>x.code===l.article_code);
       const days = daysUntil(l.bbd);
       const cls = days<0 ? "expired" : days<=EXPIRY_WARNING_DAYS ? "expiring" : "";
@@ -1821,6 +1882,11 @@ function renderStock(){
         </div>
         <div class="tabs2">
           ${viewOptions.map(([id,label])=>`<button data-stockview="${id}" class="${state.stockView===id?'active':''}">${label}</button>`).join("")}
+        </div>
+        ${filterBarHTML ? `<div style="margin-bottom:10px;">${filterBarHTML}</div>` : ""}
+        <div class="grid2" style="margin-bottom:10px;">
+          <div class="stat"><div class="muted">Υποσύνολο (κιβώτια / κιλά)</div><div class="v" style="font-size:18px;">${sub.boxes} · ${sub.weight.toFixed(1)}</div></div>
+          <div class="stat accent-amber"><div class="muted">Υποσύνολο κόστους</div><div class="v" style="font-size:18px;">${formatEUR(sub.value)}</div></div>
         </div>
         <div class="stack" style="gap:6px;">
           ${listHTML}
@@ -2184,7 +2250,23 @@ function bindEvents(){
     state.historyRange = { from: (historyRangeFrom?historyRangeFrom.value:state.historyRange.from), to: e.target.value };
     state.selectedOrders.clear(); render();
   };
-  root.querySelectorAll("[data-stockview]").forEach(b=>b.onclick=()=>{ state.stockView=b.dataset.stockview; render(); });
+  root.querySelectorAll("[data-stockview]").forEach(b=>b.onclick=()=>{
+    state.stockView=b.dataset.stockview;
+    state.stockFilterText=""; state.stockFilterCategory=""; state.stockFilterFrom=""; state.stockFilterTo="";
+    render();
+  });
+  const stockFilterText = document.getElementById("stockFilterText");
+  if (stockFilterText) stockFilterText.oninput = e => {
+    state.stockFilterText = e.target.value; render();
+    const el = document.getElementById("stockFilterText");
+    if (el){ el.focus(); el.selectionStart = el.value.length; }
+  };
+  const stockFilterCategory = document.getElementById("stockFilterCategory");
+  if (stockFilterCategory) stockFilterCategory.onchange = e => { state.stockFilterCategory = e.target.value; render(); };
+  const stockFilterFrom = document.getElementById("stockFilterFrom");
+  if (stockFilterFrom) stockFilterFrom.onchange = e => { state.stockFilterFrom = e.target.value; render(); };
+  const stockFilterTo = document.getElementById("stockFilterTo");
+  if (stockFilterTo) stockFilterTo.onchange = e => { state.stockFilterTo = e.target.value; render(); };
   const historyDateInput = document.getElementById("historyDateInput");
   if (historyDateInput) historyDateInput.onchange = e => { state.historyDate = e.target.value; state.selectedOrders.clear(); render(); };
   const historyCustomerSelect = document.getElementById("historyCustomerSelect");
