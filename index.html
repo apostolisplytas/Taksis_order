@@ -251,14 +251,15 @@ let state = {
   expandedDashCustomers: new Set(),
   stockExpanded: new Set(), // codes expanded in Σύνοψη stock (supports expand-all)
   viewingCustomerId: null,
+  trash: {articles:[], stockUnits:[], customers:[], orders:[]},
 };
 
 async function loadAll(){
   const [aRes, sRes, cRes, oRes] = await Promise.all([
-    sb.from("articles").select("*").order("name"),
-    sb.from("stock_units").select("*"),
-    sb.from("customers").select("*").order("name"),
-    sb.from("orders").select("*").order("created_at", {ascending:false})
+    sb.from("articles").select("*").is("deleted_at", null).order("name"),
+    sb.from("stock_units").select("*").is("deleted_at", null),
+    sb.from("customers").select("*").is("deleted_at", null).order("name"),
+    sb.from("orders").select("*").is("deleted_at", null).order("created_at", {ascending:false})
   ]);
   [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes]].forEach(([label,res])=>{
     if (res.error){ console.error(`load ${label} error`, res.error); showToast(`Σφάλμα φόρτωσης (${label}): ${res.error.message}`); }
@@ -268,6 +269,21 @@ async function loadAll(){
   state.customers = cRes.data || [];
   state.orders = oRes.data || [];
   state.loaded = true;
+  render();
+}
+async function loadTrash(){
+  const [aRes, sRes, cRes, oRes] = await Promise.all([
+    sb.from("articles").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
+    sb.from("stock_units").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
+    sb.from("customers").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
+    sb.from("orders").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false})
+  ]);
+  state.trash = {
+    articles: aRes.data || [],
+    stockUnits: sRes.data || [],
+    customers: cRes.data || [],
+    orders: oRes.data || [],
+  };
   render();
 }
 
@@ -415,6 +431,18 @@ function downloadCSV(filename, headers, rows){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+const ORDER_STATUSES = [
+  {id:"", label:"Εκκρεμεί", cls:""},
+  {id:"shipped", label:"Αποστολή στην αποθήκη", cls:"amber"},
+  {id:"delivered", label:"Παραδομένη", cls:"frost"},
+  {id:"invoiced", label:"Τιμολογημένη", cls:""},
+  {id:"paid", label:"Πληρωμένη", cls:"fresh"},
+];
+function statusLabel(id){ return (ORDER_STATUSES.find(s=>s.id===(id||""))||ORDER_STATUSES[0]).label; }
+function statusBadge(id){
+  const s = ORDER_STATUSES.find(x=>x.id===(id||"")) || ORDER_STATUSES[0];
+  return `<span class="badge ${s.cls}">${s.label}</span>`;
+}
 function custName(id){ return state.customers.find(c=>c.id===id)?.name || "Άγνωστος πελάτης"; }
 function orderLineValue(i){
   // Νέα λογική: αξία = κιλά × τιμή/κιλό (snapshot τη στιγμή της παραγγελίας).
@@ -433,12 +461,12 @@ function orderTotalWeight(o){ return o.items.reduce((s,i)=>s+(i.weight||0),0); }
 function orderTotalBoxes(o){ return o.items.reduce((s,i)=>s+(i.qty||0),0); }
 
 function exportOrdersCSV(ordersList, filename){
-  const headers = ["Αρ. Παραγγελίας","Ημερομηνία","Πελάτης","Κωδικός είδους","Είδος","SSCC","Lot","BBD","Κιβώτια","Κιλά","Τιμή/κιλό","Σύνολο γραμμής"];
+  const headers = ["Αρ. Παραγγελίας","Κατάσταση","Ημερομηνία","Πελάτης","Κωδικός είδους","Είδος","SSCC","Lot","BBD","Κιβώτια","Κιλά","Τιμή/κιλό","Σύνολο γραμμής"];
   const rows = [];
   ordersList.forEach(o=>{
     const cname = custName(o.customer_id);
     o.items.forEach(i=>{
-      rows.push([o.order_number?`${o.order_number}`:"", o.date, cname, i.article_code, i.article_name, i.sscc||"", i.lot_code||"", i.bbd?formatDateEL(i.bbd):"", i.qty, Number(i.weight||0).toFixed(2), Number(i.price_per_kg ?? 0).toFixed(2), orderLineValue(i).toFixed(2)]);
+      rows.push([o.order_number?`${o.order_number}`:"", statusLabel(o.status), o.date, cname, i.article_code, i.article_name, i.sscc||"", i.lot_code||"", i.bbd?formatDateEL(i.bbd):"", i.qty, Number(i.weight||0).toFixed(2), Number(i.price_per_kg ?? 0).toFixed(2), orderLineValue(i).toFixed(2)]);
     });
   });
   if (rows.length===0) return showToast("Δεν υπάρχουν δεδομένα για εξαγωγή");
@@ -453,6 +481,86 @@ function setupGreekFont(doc){
   doc.addFileToVFS("NotoSans-Bold.ttf", NOTOSANS_BOLD_B64);
   doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
   doc.setFont("NotoSans", "normal");
+}
+
+function exportDeliverySlipPDF(order){
+  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  setupGreekFont(doc);
+  const c = state.customers.find(x=>x.id===order.customer_id);
+
+  doc.setFontSize(17);
+  doc.text("Δελτίο Αποστολής", 14, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  doc.text("taksis_order", 14, 25);
+
+  doc.setTextColor(20);
+  doc.setFontSize(11);
+  doc.text(`${order.order_number || order.id}`, 196, 18, {align:"right"});
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(formatDateEL(order.date), 196, 24, {align:"right"});
+
+  let y = 38;
+  doc.setDrawColor(220);
+  doc.line(14, y, 196, y);
+  y += 8;
+
+  doc.setFontSize(9);
+  doc.setTextColor(140);
+  doc.text("ΠΑΡΑΛΗΠΤΗΣ", 14, y);
+  y += 6;
+  doc.setFontSize(12);
+  doc.setTextColor(20);
+  doc.text(c ? c.name : "—", 14, y);
+  y += 6;
+
+  doc.setFontSize(10);
+  doc.setTextColor(60);
+  const deliverySame = !c || c.delivery_same_as_billing !== false;
+  const lines = c ? (deliverySame
+    ? [c.address, [c.zip, c.city].filter(Boolean).join(" "), c.area, c.country]
+    : [c.delivery_address, [c.delivery_zip, c.delivery_city].filter(Boolean).join(" "), c.delivery_area, c.delivery_country]
+  ).filter(Boolean) : [];
+  lines.forEach(l=>{ doc.text(l, 14, y); y += 5.5; });
+  if (c && c.phone){ doc.text(`Τηλ: ${c.phone}`, 14, y); y += 5.5; }
+
+  y += 6;
+  doc.setDrawColor(220);
+  doc.line(14, y, 196, y);
+  y += 4;
+
+  const rows = order.items.map(i=>[i.article_code, i.article_name, i.lot_code||"—", i.bbd?formatDateEL(i.bbd):"—", String(i.qty), Number(i.weight||0).toFixed(1)]);
+  doc.autoTable({
+    startY: y,
+    head: [["Κωδ.","Είδος","Lot","BBD","Κιβώτια","Κιλά"]],
+    body: rows,
+    styles:{fontSize:9, font:"NotoSans"},
+    headStyles:{fillColor:[8,80,65], textColor:255, font:"NotoSans", fontStyle:"bold"},
+  });
+
+  const totalBoxes = order.items.reduce((s,i)=>s+(i.qty||0),0);
+  const totalWeight = order.items.reduce((s,i)=>s+(i.weight||0),0);
+  let finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || y+10;
+  finalY += 8;
+  doc.setFontSize(10);
+  doc.setTextColor(20);
+  doc.text(`Σύνολο: ${totalBoxes} κιβώτια · ${totalWeight.toFixed(1)} κιλά`, 14, finalY);
+
+  finalY += 26;
+  if (finalY < 270){
+    doc.setDrawColor(180);
+    doc.line(14, finalY, 84, finalY);
+    doc.line(126, finalY, 196, finalY);
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text("Υπογραφή παραδίδοντος", 14, finalY+5);
+    doc.text("Υπογραφή παραλήπτη", 126, finalY+5);
+  }
+
+  doc.save(`taksis_order-deltio-${order.order_number || order.id}.pdf`);
 }
 
 function exportOrdersPDF(ordersList, filename, title){
@@ -648,6 +756,7 @@ function render(){
     ["stock","Σύνοψη stock"],
     ["products","Είδη"],
     ["customers","Πελάτες"],
+    ["trash","Κάδος"],
   ];
   const stats = computeQuickStats();
   const TAB_ICONS = {
@@ -657,6 +766,7 @@ function render(){
     stock: `<svg viewBox="0 0 24 24" width="17" height="17"><polygon points="12,3 21,8.5 12,14 3,8.5"/><polyline points="3,13.5 12,19 21,13.5" fill="none"/></svg>`,
     products: `<svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3 L20 7.5 V16.5 L12 21 L4 16.5 V7.5 Z" fill="none"/><path d="M4 7.5 L12 12 L20 7.5" fill="none"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`,
     customers: `<svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="8" r="4" fill="none"/><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7" fill="none"/></svg>`,
+    trash: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"><line x1="4" y1="6" x2="20" y2="6"/><path d="M6 6l1 15h10l1-15"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/><line x1="9" y1="6" x2="9.5" y2="3" /><line x1="15" y1="6" x2="14.5" y2="3"/><line x1="9.5" y1="3" x2="14.5" y2="3"/></svg>`,
   };
   const brandBlock = `
     <svg viewBox="0 0 120 120" width="34" height="34" xmlns="http://www.w3.org/2000/svg">
@@ -712,6 +822,7 @@ function renderTab(){
   if (state.tab === "customers") return renderCustomers();
   if (state.tab === "history") return renderHistory();
   if (state.tab === "stock") return renderStock();
+  if (state.tab === "trash") return renderTrash();
   return "";
 }
 
@@ -966,7 +1077,7 @@ async function deleteOrderAndRestore(orderId){
     const {error} = await sb.from("stock_units").update({volume_boxes:newBoxes, weight_kg:newWeight}).eq("sscc", it.sscc);
     if (!error) restoredCount++;
   }
-  const {error: delErr} = await sb.from("orders").delete().eq("id", orderId);
+  const {error: delErr} = await sb.from("orders").update({deleted_at: new Date().toISOString()}).eq("id", orderId);
   if (delErr) return showToast(`Σφάλμα διαγραφής: ${delErr.message}`);
   await loadAll();
   if (missingCount>0) showToast(`Η παραγγελία διαγράφηκε. ${missingCount} lot(s) δεν βρέθηκαν — δεν επαναφέρθηκε το απόθεμά τους.`);
@@ -1396,9 +1507,15 @@ function renderOrderCard(o, showDate){
           <button class="btn danger" data-delorder="${o.id}">✕</button>
         </div>
       </div>
-      <ul style="margin:0;padding-left:40px;color:var(--muted);font-size:12px;">
+      <ul style="margin:0 0 8px;padding-left:40px;color:var(--muted);font-size:12px;">
         ${o.items.map(i=>`<li>${i.qty} κιβ. (${Number(i.weight||0).toFixed(1)} κιλά) × ${esc(i.article_name)} ${i.lot_code?`(lot ${esc(i.lot_code)})`:""}</li>`).join("")}
       </ul>
+      <div class="row" style="padding-left:40px;flex-wrap:wrap;gap:8px;">
+        <select data-orderstatus="${o.id}" style="width:auto;font-size:12px;padding:6px 8px;">
+          ${ORDER_STATUSES.map(s=>`<option value="${s.id}" ${(o.status||"")===s.id?'selected':''}>${s.label}</option>`).join("")}
+        </select>
+        <button class="btn" data-deliveryslip="${o.id}" style="font-size:12px;padding:6px 10px;">📄 Δελτίο Αποστολής</button>
+      </div>
     </div>
   `;
 }
@@ -1435,6 +1552,63 @@ function articleCardHTML(a){
         </div>
       ` : ""}
     </div>`;
+}
+
+/* ---------------- TRASH TAB ---------------- */
+function trashRowHTML(kind, item, label, sub){
+  return `
+    <div class="card row">
+      <div style="min-width:0;">
+        <div style="font-size:13px;">${esc(label)}</div>
+        <div class="muted">${esc(sub)}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="btn" data-restore="${kind}" data-restoreid="${esc(item.__id)}">↩ Επαναφορά</button>
+        <button class="btn btn-danger-outline" data-purge="${kind}" data-purgeid="${esc(item.__id)}">Οριστική διαγραφή</button>
+      </div>
+    </div>`;
+}
+function renderTrash(){
+  const t = state.trash;
+  const totalCount = t.orders.length + t.articles.length + t.stockUnits.length + t.customers.length;
+  return `
+    <div class="stack">
+      <p class="muted" style="line-height:1.6;">Στοιχεία που έχεις διαγράψει. Μπορείς να τα επαναφέρεις, ή να τα διαγράψεις οριστικά (δεν γίνεται αναίρεση σε αυτό).</p>
+      ${totalCount===0 ? `<p class="center-note">Ο κάδος είναι άδειος.</p>` : ""}
+
+      ${t.orders.length>0 ? `
+        <div>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Παραγγελίες (${t.orders.length})</p>
+          <div class="stack" style="gap:6px;">
+            ${t.orders.map(o=>trashRowHTML("orders", {...o, __id:o.id}, `${o.order_number||o.id} — ${custName(o.customer_id)}`, `${o.date} · ${orderTotalBoxes(o)} κιβ. · ${formatEUR(orderTotal(o))}`)).join("")}
+          </div>
+        </div>` : ""}
+
+      ${t.customers.length>0 ? `
+        <div>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Πελάτες (${t.customers.length})</p>
+          <div class="stack" style="gap:6px;">
+            ${t.customers.map(c=>trashRowHTML("customers", {...c, __id:c.id}, c.name, [c.code,c.city].filter(Boolean).join(" · ")||"—")).join("")}
+          </div>
+        </div>` : ""}
+
+      ${t.articles.length>0 ? `
+        <div>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Είδη (${t.articles.length})</p>
+          <div class="stack" style="gap:6px;">
+            ${t.articles.map(a=>trashRowHTML("articles", {...a, __id:a.code}, a.name, a.code)).join("")}
+          </div>
+        </div>` : ""}
+
+      ${t.stockUnits.length>0 ? `
+        <div>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Παρτίδες (${t.stockUnits.length})</p>
+          <div class="stack" style="gap:6px;">
+            ${t.stockUnits.map(l=>trashRowHTML("stock_units", {...l, __id:l.sscc}, `${l.article_code} — Lot ${l.lot_code||"—"}`, `${l.volume_boxes} κιβ. · ${Number(l.weight_kg).toFixed(1)} κιλά`)).join("")}
+          </div>
+        </div>` : ""}
+    </div>
+  `;
 }
 
 function renderStock(){
@@ -1705,6 +1879,7 @@ function bindEvents(){
     state.tab=b.dataset.tab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
     state.showImportStock=false; state.showImportC=false; state.addingLotFor=null; state.selectedOrders.clear();
     render();
+    if (state.tab === "trash") loadTrash();
   });
 
   root.querySelectorAll("[data-togglequickorder]").forEach(el=>el.onclick=()=>{
@@ -1807,12 +1982,15 @@ function bindEvents(){
   });
   root.querySelectorAll("[data-delarticle]").forEach(b=>b.onclick=async(ev)=>{
     ev.stopPropagation();
-    if (!confirm("Διαγραφή είδους και όλων των παρτίδων του;")) return;
-    await sb.from("articles").delete().eq("code", b.dataset.delarticle);
+    if (!confirm("Μεταφορά είδους και όλων των παρτίδων του στον Κάδο; Μπορείς να το επαναφέρεις αργότερα.")) return;
+    const code = b.dataset.delarticle;
+    const ts = new Date().toISOString();
+    await sb.from("articles").update({deleted_at: ts}).eq("code", code);
+    await sb.from("stock_units").update({deleted_at: ts}).eq("article_code", code).is("deleted_at", null);
     await loadAll();
   });
   root.querySelectorAll("[data-dellot]").forEach(b=>b.onclick=async()=>{
-    await sb.from("stock_units").delete().eq("sscc", b.dataset.dellot);
+    await sb.from("stock_units").update({deleted_at: new Date().toISOString()}).eq("sscc", b.dataset.dellot);
     await loadAll();
   });
   root.querySelectorAll("[data-addlot]").forEach(b=>b.onclick=()=>{ state.addingLotFor = b.dataset.addlot; render(); });
@@ -1865,7 +2043,8 @@ function bindEvents(){
     render();
   });
   root.querySelectorAll("[data-delcustomer]").forEach(b=>b.onclick=async()=>{
-    await sb.from("customers").delete().eq("id", b.dataset.delcustomer);
+    if (!confirm("Μεταφορά πελάτη στον Κάδο; Μπορείς να τον επαναφέρεις αργότερα.")) return;
+    await sb.from("customers").update({deleted_at: new Date().toISOString()}).eq("id", b.dataset.delcustomer);
     await loadAll();
   });
   const cancelCustomerBtn = document.getElementById("cancelCustomerBtn");
@@ -1936,9 +2115,22 @@ function bindEvents(){
   const historyCustomerSelect = document.getElementById("historyCustomerSelect");
   if (historyCustomerSelect) historyCustomerSelect.onchange = e => { state.historyCustomer = e.target.value; state.selectedOrders.clear(); render(); };
   root.querySelectorAll("[data-delorder]").forEach(b=>b.onclick=async()=>{
-    if (!confirm("Διαγραφή παραγγελίας; Το απόθεμα θα επιστραφεί στα αντίστοιχα lots.")) return;
+    if (!confirm("Μεταφορά παραγγελίας στον Κάδο; Το απόθεμα θα επιστραφεί στα αντίστοιχα lots, και μπορείς να την επαναφέρεις αργότερα.")) return;
     state.selectedOrders.delete(b.dataset.delorder);
     await deleteOrderAndRestore(b.dataset.delorder);
+  });
+  root.querySelectorAll("[data-orderstatus]").forEach(sel=>sel.onchange=async()=>{
+    const id = sel.dataset.orderstatus;
+    const newStatus = sel.value;
+    const order = state.orders.find(o=>o.id===id);
+    if (order) order.status = newStatus; // αισιόδοξη ενημέρωση, χωρίς πλήρες reload
+    const {error} = await sb.from("orders").update({status: newStatus || null}).eq("id", id);
+    if (error) showToast(`Σφάλμα: ${error.message}`);
+    else showToast(`Κατάσταση: ${statusLabel(newStatus)}`);
+  });
+  root.querySelectorAll("[data-deliveryslip]").forEach(b=>b.onclick=()=>{
+    const order = state.orders.find(o=>o.id===b.dataset.deliveryslip);
+    if (order) exportDeliverySlipPDF(order);
   });
   root.querySelectorAll("[data-ordercheck]").forEach(cb=>cb.onchange=()=>{
     const id = cb.dataset.ordercheck;
@@ -1988,6 +2180,31 @@ function bindEvents(){
   // stock tab
   const exportStockBtn = document.getElementById("exportStockBtn");
   if (exportStockBtn) exportStockBtn.onclick = exportStockCSV;
+
+  // trash tab
+  const TRASH_TABLE_CONFIG = {
+    orders: {table:"orders", idCol:"id"},
+    customers: {table:"customers", idCol:"id"},
+    articles: {table:"articles", idCol:"code"},
+    stock_units: {table:"stock_units", idCol:"sscc"},
+  };
+  root.querySelectorAll("[data-restore]").forEach(b=>b.onclick=async()=>{
+    const cfg = TRASH_TABLE_CONFIG[b.dataset.restore];
+    if (!cfg) return;
+    const {error} = await sb.from(cfg.table).update({deleted_at:null}).eq(cfg.idCol, b.dataset.restoreid);
+    if (error) return showToast(`Σφάλμα επαναφοράς: ${error.message}`);
+    showToast("Επαναφέρθηκε");
+    await Promise.all([loadAll(), loadTrash()]);
+  });
+  root.querySelectorAll("[data-purge]").forEach(b=>b.onclick=async()=>{
+    if (!confirm("Οριστική διαγραφή — δεν μπορεί να αναιρεθεί. Συνέχεια;")) return;
+    const cfg = TRASH_TABLE_CONFIG[b.dataset.purge];
+    if (!cfg) return;
+    const {error} = await sb.from(cfg.table).delete().eq(cfg.idCol, b.dataset.purgeid);
+    if (error) return showToast(`Σφάλμα διαγραφής: ${error.message}`);
+    showToast("Διαγράφηκε οριστικά");
+    await loadTrash();
+  });
 }
 
 function collectArticleForm(){
