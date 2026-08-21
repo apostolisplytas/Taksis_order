@@ -78,6 +78,9 @@
   .muted{color:var(--muted);font-size:12px;line-height:1.5;}
   .muted2{color:var(--muted2);}
   input,select,textarea{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:10px 12px;font-size:14px;width:100%;font-family:inherit;transition:border-color 0.15s;}
+  input[type="date"]{color-scheme:dark;}
+  input[type="date"]::-webkit-calendar-picker-indicator{cursor:pointer;padding:4px;border-radius:5px;}
+  input[type="date"]::-webkit-calendar-picker-indicator:hover{background:var(--panel2);}
   textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);}
   input::placeholder,textarea::placeholder{color:var(--muted2);}
