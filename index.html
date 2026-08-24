@@ -154,6 +154,205 @@ let sb = null;
 if (configured) sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const root = document.getElementById("root");
+/* ---------------- i18n (EL/EN) ---------------- */
+const I18N = {
+  el: {
+    // Header / nav
+    module_tag: "taksis_order", lang_switch: "EN",
+    nav_orders: "Νέα παραγγελία", nav_dashboard: "Επισκόπηση", nav_history: "Παραγγελίες",
+    nav_stock: "Σύνοψη stock", nav_products: "Είδη", nav_customers: "Πελάτες", nav_trash: "Κάδος",
+    // Common
+    save: "Αποθήκευση", cancel: "Άκυρο", edit: "Επεξ.", delete: "Διαγραφή", close: "Κλείσιμο",
+    search_placeholder: "Αναζήτηση...", select_all: "Επιλογή όλων", clear: "Καθαρισμός",
+    boxes: "κιβώτια", boxes_short: "κιβ.", kg: "κιλά", total: "Σύνολο", subtotal: "Υποσύνολο",
+    yes: "Ναι", no: "Όχι", loading: "Φόρτωση...",
+    export_csv: "⇩ CSV", export_pdf: "⇩ PDF",
+    // Orders tab
+    customer_label: "Πελάτης", select_customer: "— Επίλεξε πελάτη —",
+    search_article: "Αναζήτηση είδους ή κωδικού...",
+    quick_order_title: "⚡ Γρήγορη παραγγελία (FEFO)",
+    quick_order_desc: "Γράψε κωδικό + ποσότητα, ένα ανά γραμμή — το σύστημα διαλέγει αυτόματα τα lots με την πιο κοντινή λήξη.",
+    quick_order_hint: "Μορφή: κωδικός, κενό ή κόμμα, μετά ποσότητα σε κιβώτια. Μία γραμμή ανά είδος. Μπορείς να επικολλήσεις κατευθείαν τη λίστα του πελάτη.",
+    quick_order_apply: "Πρόσθεσε στο καλάθι (FEFO)",
+    no_articles: "Δεν έχεις εισάγει είδη ακόμα.", no_results: "Κανένα αποτέλεσμα.",
+    no_stock_available: "Δεν υπάρχει διαθέσιμο απόθεμα.",
+    in_cart_badge: "κιβ. στο καλάθι",
+    lots_count: "lot", available_boxes: "κιβ. διαθέσιμα",
+    submit_order: "Καταχώρηση παραγγελίας",
+    // Dashboard
+    dash_today: "Παραγγελίες σήμερα", dash_7d: "Παραγγελίες (7 ημ.)", dash_month_rev: "Έσοδα μήνα",
+    dash_active_customers: "Ενεργοί πελάτες (μήνα)", dash_low_stock: "Χαμηλό απόθεμα", dash_expiring: "Λήγουν σύντομα",
+    dash_last14: "Παραγγελίες τελευταίες 14 ημέρες",
+    dash_per_customer: "Ποσότητες ανά πελάτη", dash_per_article: "Ποσότητες ανά κωδικό είδους",
+    dash_no_orders: "Δεν υπάρχουν παραγγελίες ακόμα.", dash_orders_count: "παραγγελ.",
+    // History
+    view_day: "Ανά ημέρα", view_customer: "Ανά πελάτη", date_specific: "Συγκεκριμένη ημέρα", date_range: "Περίοδος",
+    from: "Από", to: "Έως", no_orders_today: "Καμία παραγγελία αυτή την ημέρα.",
+    no_orders_period: "Καμία παραγγελία σε αυτή την περίοδο.", no_orders_customer: "Καμία παραγγελία για αυτόν τον πελάτη.",
+    selected_count: "επιλεγμένες", daily_report: "Ημερήσια αναφορά (πελάτης · κιβώτια · ποσό)",
+    delivery_slip: "📄 Δελτίο Αποστολής", order_status: "Κατάσταση",
+    // Stock
+    view_product: "Ανά προϊόν", view_code: "Ανά κωδικό", view_category: "Ανά κατηγορία",
+    view_expiry: "Ανά ημ. λήξης", view_month: "Λήγουν τις επόμενες 30 ημέρες",
+    stock_total_boxes: "Σύνολο κιβωτίων", stock_total_kg: "Σύνολο κιλών", stock_value: "Αξία αποθέματος",
+    stock_expiring_header: "⚠ Λήγουν σύντομα (εντός {n} ημερών) ή έληξαν",
+    stock_section: "Απόθεμα", expand_all: "Expand all", collapse_all: "Collapse all",
+    all_categories: "Όλες οι κατηγορίες", no_items_category: "Δεν υπάρχουν είδη σε αυτές τις κατηγορίες.",
+    filter_code_placeholder: "Αναζήτηση για να βρεις κωδικούς...",
+    selected_items: "επιλεγμένα είδη", none_selected: "Κανένα επιλεγμένο — δείχνει όλα",
+    subtotal_boxes_kg: "Υποσύνολο (κιβώτια / κιλά)", subtotal_cost: "Υποσύνολο κόστους",
+    no_lots_period: "Καμία παρτίδα δεν λήγει σε αυτό το διάστημα.",
+    // Products / Articles
+    add_article: "+ Νέο είδος", price_per_box: "Τιμή (€/κιβ.)", price_per_kg: "Μέση τιμή (€/κιλό)",
+    custom_fields: "Custom πεδία", add_field: "+ πεδίο", add_lot: "+ Παρτίδα",
+    save_lot: "Αποθήκευση παρτίδας", sscc_optional: "SSCC (προαιρετικό)", zone_label: "Ζώνη",
+    lot_code_label: "Lot code", bbd_label: "BBD (ημ. λήξης)", reference_label: "Reference",
+    no_lots: "Καμία παρτίδα.", no_articles_yet: "Δεν υπάρχουν είδη.",
+    // Customers
+    add_customer: "+ Νέος πελάτης", customer_code: "Κωδικός πελάτη", customer_name: "Όνομα *",
+    vat: "ΑΦΜ", commercial_name: "Εμπορική επωνυμία", address: "Διεύθυνση", area: "Περιοχή",
+    zip: "Τ.Κ.", city: "Πόλη", country: "Χώρα", phone: "Τηλέφωνο", fax: "Fax",
+    email: "Email", email2: "Email 2", notes: "Σημειώσεις",
+    delivery_address_title: "Διεύθυνση παράδοσης", billing_address_title: "Διεύθυνση χρέωσης",
+    same_as_billing: "Ίδια με τη διεύθυνση χρέωσης", no_customers: "Δεν υπάρχουν πελάτες.",
+    back_to_customers: "← Πελάτες", cust_orders: "Παραγγελίες", cust_revenue: "Τζίρος",
+    cust_boxes: "Κιβώτια", cust_kg: "Κιλά", cust_recent_orders: "Πρόσφατες παραγγελίες",
+    cust_all_orders: "Όλες", cust_per_article: "Ανά κωδικό είδους",
+    // Trash
+    trash_desc: "Στοιχεία που έχεις διαγράψει. Μπορείς να τα επαναφέρεις, ή να τα διαγράψεις οριστικά (δεν γίνεται αναίρεση σε αυτό).",
+    trash_empty: "Ο κάδος είναι άδειος.", restore: "↩ Επαναφορά", purge: "Οριστική διαγραφή",
+    trash_orders: "Παραγγελίες", trash_customers: "Πελάτες", trash_articles: "Είδη", trash_lots: "Παρτίδες",
+    // Statuses
+    status_pending: "Εκκρεμεί", status_shipped: "Αποστολή στην αποθήκη", status_delivered: "Παραδομένη",
+    status_invoiced: "Τιμολογημένη", status_paid: "Πληρωμένη",
+    // Import
+    import_stock_hint: 'Ανέβασε το αρχείο stock (.csv) ή επικόλλησέ το. Αναγνωρίζει στήλες: <code>SSCC, Article Code, Article Name, Zone, Remaining Volume, #Weight, Lot Code, BBD, Reference</code>. Κάθε γραμμή είναι μια παρτίδα (SSCC) — αν επανεισάγεις, οι παρτίδες με ίδιο SSCC ενημερώνονται.',
+    import_button: "Εισαγωγή", clear_all_stock: "🗑 Καθαρισμός όλου του stock",
+    // Toasts
+    toast_saved: "Αποθηκεύτηκε", toast_select_customer: "Επίλεξε πελάτη", toast_add_products: "Πρόσθεσε προϊόντα",
+    toast_code_name_required: "Κωδικός και όνομα υποχρεωτικά", toast_name_required: "Το όνομα είναι υποχρεωτικό",
+    toast_file_read_error: "Δεν ήταν δυνατή η ανάγνωση του αρχείου",
+    toast_no_valid_lines: "Δεν βρέθηκαν έγκυρες γραμμές", toast_no_valid_records: "Δεν βρέθηκαν έγκυρες εγγραφές",
+    toast_no_article_code_col: "Δεν βρέθηκε στήλη Article Code", toast_no_name_col: "Δεν βρέθηκε στήλη Name",
+    toast_no_stock_export: "Δεν υπάρχουν δεδομένα stock για εξαγωγή", toast_no_data_export: "Δεν υπάρχουν δεδομένα για εξαγωγή",
+    toast_no_orders_today: "Δεν υπάρχουν παραγγελίες αυτή την ημέρα", toast_no_customers_export: "Δεν υπάρχουν πελάτες για εξαγωγή",
+    toast_purged: "Διαγράφηκε οριστικά", toast_restored: "Επαναφέρθηκε",
+    toast_pdf_lib_error: "Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet",
+    toast_order_deleted_restored: "Η παραγγελία διαγράφηκε και το απόθεμα επαναφέρθηκε",
+    toast_lot_saved: "Η παρτίδα αποθηκεύτηκε", toast_stock_cleared: "Το stock καθαρίστηκε",
+    toast_quickorder_min: "Γράψε τουλάχιστον μία γραμμή κωδικός/ποσότητα",
+    // Export headers
+    h_order_no: "Αρ. Παραγγελίας", h_status: "Κατάσταση", h_date: "Ημερομηνία", h_customer: "Πελάτης",
+    h_article_code: "Κωδικός είδους", h_article: "Είδος", h_boxes_h: "Κιβώτια", h_kg_h: "Κιλά",
+    h_price_kg: "Τιμή/κιλό", h_line_total: "Σύνολο γραμμής", h_amount: "Ποσό (€)",
+    h_code: "Κωδικός", h_name: "Όνομα", h_vat: "ΑΦΜ", h_commercial: "Εμπορική επωνυμία",
+    h_address: "Διεύθυνση", h_area: "Περιοχή", h_zip: "Τ.Κ.", h_city: "Πόλη", h_country: "Χώρα",
+    h_phone: "Τηλέφωνο", h_fax: "Fax", h_email: "Email", h_email2: "Email 2", h_notes: "Σημειώσεις",
+    h_orders: "Παραγγελίες", h_value_eur: "Αξία (€)", h_category: "Κατηγορία", h_zone: "Ζώνη",
+    h_short: "Κωδ.", h_shortdate: "Ημ/νία", h_shortboxes: "Κιβ.", h_shortprice: "€/κιλό", h_shorttotal: "Σύνολο",
+    h_shortamount: "Ποσό", h_shortvalue: "Αξία",
+    pdf_delivery_title: "Δελτίο Αποστολής", pdf_recipient: "ΠΑΡΑΛΗΠΤΗΣ", pdf_total: "Σύνολο",
+    pdf_sig_sender: "Υπογραφή παραδίδοντος", pdf_sig_receiver: "Υπογραφή παραλήπτη",
+    pdf_daily_report_title: "Ημερήσια Αναφορά Παραγγελιών", pdf_total_label: "Σύνολο",
+    pdf_export_label: "Εξαγωγή", pdf_orders_label: "παραγγελίες", pdf_by_customer: "Ποσότητες ανά πελάτη",
+    pdf_by_article: "Ποσότητες ανά κωδικό είδους", pdf_stock_title: "Απόθεμα",
+  },
+  en: {
+    module_tag: "taksis_order", lang_switch: "EL",
+    nav_orders: "New order", nav_dashboard: "Overview", nav_history: "Orders",
+    nav_stock: "Stock summary", nav_products: "Items", nav_customers: "Customers", nav_trash: "Trash",
+    save: "Save", cancel: "Cancel", edit: "Edit", delete: "Delete", close: "Close",
+    search_placeholder: "Search...", select_all: "Select all", clear: "Clear",
+    boxes: "boxes", boxes_short: "box.", kg: "kg", total: "Total", subtotal: "Subtotal",
+    yes: "Yes", no: "No", loading: "Loading...",
+    export_csv: "⇩ CSV", export_pdf: "⇩ PDF",
+    customer_label: "Customer", select_customer: "— Select customer —",
+    search_article: "Search item or code...",
+    quick_order_title: "⚡ Quick order (FEFO)",
+    quick_order_desc: "Type code + quantity, one per line — the system auto-picks lots by soonest expiry.",
+    quick_order_hint: "Format: code, space or comma, then quantity in boxes. One line per item. You can paste the customer's list directly.",
+    quick_order_apply: "Add to cart (FEFO)",
+    no_articles: "You haven't added any items yet.", no_results: "No results.",
+    no_stock_available: "No stock available.",
+    in_cart_badge: "box. in cart",
+    lots_count: "lot", available_boxes: "box. available",
+    submit_order: "Submit order",
+    dash_today: "Orders today", dash_7d: "Orders (7d)", dash_month_rev: "Revenue this month",
+    dash_active_customers: "Active customers (month)", dash_low_stock: "Low stock", dash_expiring: "Expiring soon",
+    dash_last14: "Orders — last 14 days",
+    dash_per_customer: "Quantities by customer", dash_per_article: "Quantities by item code",
+    dash_no_orders: "No orders yet.", dash_orders_count: "orders",
+    view_day: "By day", view_customer: "By customer", date_specific: "Specific day", date_range: "Date range",
+    from: "From", to: "To", no_orders_today: "No orders on this day.",
+    no_orders_period: "No orders in this period.", no_orders_customer: "No orders for this customer.",
+    selected_count: "selected", daily_report: "Daily report (customer · boxes · amount)",
+    delivery_slip: "📄 Delivery slip", order_status: "Status",
+    view_product: "By product", view_code: "By code", view_category: "By category",
+    view_expiry: "By expiry date", view_month: "Expiring in next 30 days",
+    stock_total_boxes: "Total boxes", stock_total_kg: "Total kg", stock_value: "Stock value",
+    stock_expiring_header: "⚠ Expiring soon (within {n} days) or expired",
+    stock_section: "Stock", expand_all: "Expand all", collapse_all: "Collapse all",
+    all_categories: "All categories", no_items_category: "No items in these categories.",
+    filter_code_placeholder: "Search to find codes...",
+    selected_items: "items selected", none_selected: "None selected — showing all",
+    subtotal_boxes_kg: "Subtotal (boxes / kg)", subtotal_cost: "Subtotal cost",
+    no_lots_period: "No lots expiring in this period.",
+    add_article: "+ New item", price_per_box: "Price (€/box)", price_per_kg: "Avg. price (€/kg)",
+    custom_fields: "Custom fields", add_field: "+ field", add_lot: "+ Lot",
+    save_lot: "Save lot", sscc_optional: "SSCC (optional)", zone_label: "Zone",
+    lot_code_label: "Lot code", bbd_label: "BBD (expiry date)", reference_label: "Reference",
+    no_lots: "No lots.", no_articles_yet: "No items yet.",
+    add_customer: "+ New customer", customer_code: "Customer code", customer_name: "Name *",
+    vat: "VAT", commercial_name: "Trade name", address: "Address", area: "Area",
+    zip: "Zip code", city: "City", country: "Country", phone: "Phone", fax: "Fax",
+    email: "Email", email2: "Email 2", notes: "Notes",
+    delivery_address_title: "Delivery address", billing_address_title: "Billing address",
+    same_as_billing: "Same as billing address", no_customers: "No customers yet.",
+    back_to_customers: "← Customers", cust_orders: "Orders", cust_revenue: "Revenue",
+    cust_boxes: "Boxes", cust_kg: "Kg", cust_recent_orders: "Recent orders",
+    cust_all_orders: "All", cust_per_article: "By item code",
+    trash_desc: "Items you've deleted. You can restore them, or delete permanently (no undo for that).",
+    trash_empty: "Trash is empty.", restore: "↩ Restore", purge: "Delete permanently",
+    trash_orders: "Orders", trash_customers: "Customers", trash_articles: "Items", trash_lots: "Lots",
+    status_pending: "Pending", status_shipped: "Shipped to warehouse", status_delivered: "Delivered",
+    status_invoiced: "Invoiced", status_paid: "Paid",
+    import_stock_hint: 'Upload the stock file (.csv) or paste it. Recognizes columns: <code>SSCC, Article Code, Article Name, Zone, Remaining Volume, #Weight, Lot Code, BBD, Reference</code>. Each row is one lot (SSCC) — re-importing updates lots with the same SSCC.',
+    import_button: "Import", clear_all_stock: "🗑 Clear all stock",
+    toast_saved: "Saved", toast_select_customer: "Select a customer", toast_add_products: "Add some items",
+    toast_code_name_required: "Code and name are required", toast_name_required: "Name is required",
+    toast_file_read_error: "Could not read the file",
+    toast_no_valid_lines: "No valid lines found", toast_no_valid_records: "No valid records found",
+    toast_no_article_code_col: "Article Code column not found", toast_no_name_col: "Name column not found",
+    toast_no_stock_export: "No stock data to export", toast_no_data_export: "No data to export",
+    toast_no_orders_today: "No orders on this day", toast_no_customers_export: "No customers to export",
+    toast_purged: "Permanently deleted", toast_restored: "Restored",
+    toast_pdf_lib_error: "PDF library didn't load — check your internet connection",
+    toast_order_deleted_restored: "Order deleted and stock restored",
+    toast_lot_saved: "Lot saved", toast_stock_cleared: "Stock cleared",
+    toast_quickorder_min: "Type at least one code/quantity line",
+    h_order_no: "Order No.", h_status: "Status", h_date: "Date", h_customer: "Customer",
+    h_article_code: "Item code", h_article: "Item", h_boxes_h: "Boxes", h_kg_h: "Kg",
+    h_price_kg: "Price/kg", h_line_total: "Line total", h_amount: "Amount (€)",
+    h_code: "Code", h_name: "Name", h_vat: "VAT", h_commercial: "Trade name",
+    h_address: "Address", h_area: "Area", h_zip: "Zip", h_city: "City", h_country: "Country",
+    h_phone: "Phone", h_fax: "Fax", h_email: "Email", h_email2: "Email 2", h_notes: "Notes",
+    h_orders: "Orders", h_value_eur: "Value (€)", h_category: "Category", h_zone: "Zone",
+    h_short: "Code", h_shortdate: "Date", h_shortboxes: "Box.", h_shortprice: "€/kg", h_shorttotal: "Total",
+    h_shortamount: "Amount", h_shortvalue: "Value",
+    pdf_delivery_title: "Delivery Slip", pdf_recipient: "RECIPIENT", pdf_total: "Total",
+    pdf_sig_sender: "Sender signature", pdf_sig_receiver: "Receiver signature",
+    pdf_daily_report_title: "Daily Order Report", pdf_total_label: "Total",
+    pdf_export_label: "Exported", pdf_orders_label: "orders", pdf_by_customer: "Quantities by customer",
+    pdf_by_article: "Quantities by item code", pdf_stock_title: "Stock",
+  },
+};
+function t(key, vars){
+  const dict = I18N[state.lang] || I18N.el;
+  let s = dict[key] !== undefined ? dict[key] : (I18N.el[key] !== undefined ? I18N.el[key] : key);
+  if (vars) Object.entries(vars).forEach(([k,v]) => { s = s.replace(`{${k}}`, v); });
+  return s;
+}
+
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 const todayISO = () => new Date().toISOString().slice(0,10);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -243,6 +442,7 @@ function showToast(msg){
 
 let state = {
   tab: "orders",
+  lang: (function(){ try { return localStorage.getItem("taksis_lang") || "el"; } catch(e){ return "el"; } })(),
   articles: [], stockUnits: [], customers: [], orders: [],
   cart: {}, // sscc -> qty boxes
   customerId: "", search: "", loaded: false,
@@ -437,16 +637,16 @@ function downloadCSV(filename, headers, rows){
   URL.revokeObjectURL(url);
 }
 const ORDER_STATUSES = [
-  {id:"", label:"Εκκρεμεί", cls:""},
-  {id:"shipped", label:"Αποστολή στην αποθήκη", cls:"amber"},
-  {id:"delivered", label:"Παραδομένη", cls:"frost"},
-  {id:"invoiced", label:"Τιμολογημένη", cls:""},
-  {id:"paid", label:"Πληρωμένη", cls:"fresh"},
+  {id:"", key:"status_pending", cls:""},
+  {id:"shipped", key:"status_shipped", cls:"amber"},
+  {id:"delivered", key:"status_delivered", cls:"frost"},
+  {id:"invoiced", key:"status_invoiced", cls:""},
+  {id:"paid", key:"status_paid", cls:"fresh"},
 ];
-function statusLabel(id){ return (ORDER_STATUSES.find(s=>s.id===(id||""))||ORDER_STATUSES[0]).label; }
+function statusLabel(id){ return t((ORDER_STATUSES.find(s=>s.id===(id||""))||ORDER_STATUSES[0]).key); }
 function statusBadge(id){
   const s = ORDER_STATUSES.find(x=>x.id===(id||"")) || ORDER_STATUSES[0];
-  return `<span class="badge ${s.cls}">${s.label}</span>`;
+  return `<span class="badge ${s.cls}">${t(s.key)}</span>`;
 }
 function custName(id){ return state.customers.find(c=>c.id===id)?.name || "Άγνωστος πελάτης"; }
 function orderLineValue(i){
@@ -466,7 +666,7 @@ function orderTotalWeight(o){ return o.items.reduce((s,i)=>s+(i.weight||0),0); }
 function orderTotalBoxes(o){ return o.items.reduce((s,i)=>s+(i.qty||0),0); }
 
 function exportOrdersCSV(ordersList, filename){
-  const headers = ["Αρ. Παραγγελίας","Κατάσταση","Ημερομηνία","Πελάτης","Κωδικός είδους","Είδος","SSCC","Lot","BBD","Κιβώτια","Κιλά","Τιμή/κιλό","Σύνολο γραμμής"];
+  const headers = [t("h_order_no"),t("h_status"),t("h_date"),t("h_customer"),t("h_article_code"),t("h_article"),"SSCC","Lot","BBD",t("h_boxes_h"),t("h_kg_h"),t("h_price_kg"),t("h_line_total")];
   const rows = [];
   ordersList.forEach(o=>{
     const cname = custName(o.customer_id);
@@ -474,7 +674,7 @@ function exportOrdersCSV(ordersList, filename){
       rows.push([o.order_number?`${o.order_number}`:"", statusLabel(o.status), o.date, cname, i.article_code, i.article_name, i.sscc||"", i.lot_code||"", i.bbd?formatDateEL(i.bbd):"", i.qty, Number(i.weight||0).toFixed(2), Number(i.price_per_kg ?? 0).toFixed(2), orderLineValue(i).toFixed(2)]);
     });
   });
-  if (rows.length===0) return showToast("Δεν υπάρχουν δεδομένα για εξαγωγή");
+  if (rows.length===0) return showToast(t("toast_no_data_export"));
   downloadCSV(filename, headers, rows);
 }
 /* ---------------- Greek font for PDF export ---------------- */
@@ -489,14 +689,14 @@ function setupGreekFont(doc){
 }
 
 function exportDeliverySlipPDF(order){
-  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   setupGreekFont(doc);
   const c = state.customers.find(x=>x.id===order.customer_id);
 
   doc.setFontSize(17);
-  doc.text("Δελτίο Αποστολής", 14, 18);
+  doc.text(t("pdf_delivery_title"), 14, 18);
   doc.setFontSize(10);
   doc.setTextColor(120);
   doc.text("taksis_order", 14, 25);
@@ -515,7 +715,7 @@ function exportDeliverySlipPDF(order){
 
   doc.setFontSize(9);
   doc.setTextColor(140);
-  doc.text("ΠΑΡΑΛΗΠΤΗΣ", 14, y);
+  doc.text(t("pdf_recipient"), 14, y);
   y += 6;
   doc.setFontSize(12);
   doc.setTextColor(20);
@@ -530,7 +730,7 @@ function exportDeliverySlipPDF(order){
     : [c.delivery_address, [c.delivery_zip, c.delivery_city].filter(Boolean).join(" "), c.delivery_area, c.delivery_country]
   ).filter(Boolean) : [];
   lines.forEach(l=>{ doc.text(l, 14, y); y += 5.5; });
-  if (c && c.phone){ doc.text(`Τηλ: ${c.phone}`, 14, y); y += 5.5; }
+  if (c && c.phone){ doc.text(`${t("phone")}: ${c.phone}`, 14, y); y += 5.5; }
 
   y += 6;
   doc.setDrawColor(220);
@@ -540,7 +740,7 @@ function exportDeliverySlipPDF(order){
   const rows = order.items.map(i=>[i.article_code, i.article_name, i.lot_code||"—", i.bbd?formatDateEL(i.bbd):"—", String(i.qty), Number(i.weight||0).toFixed(1)]);
   doc.autoTable({
     startY: y,
-    head: [["Κωδ.","Είδος","Lot","BBD","Κιβώτια","Κιλά"]],
+    head: [[t("h_short"),t("h_article"),"Lot","BBD",t("h_boxes_h"),t("h_kg_h")]],
     body: rows,
     styles:{fontSize:9, font:"NotoSans"},
     headStyles:{fillColor:[8,80,65], textColor:255, font:"NotoSans", fontStyle:"bold"},
@@ -552,7 +752,7 @@ function exportDeliverySlipPDF(order){
   finalY += 8;
   doc.setFontSize(10);
   doc.setTextColor(20);
-  doc.text(`Σύνολο: ${totalBoxes} κιβώτια · ${totalWeight.toFixed(1)} κιλά`, 14, finalY);
+  doc.text(`${t("pdf_total")}: ${totalBoxes} ${t("boxes")} · ${totalWeight.toFixed(1)} ${t("kg")}`, 14, finalY);
 
   finalY += 26;
   if (finalY < 270){
@@ -561,16 +761,16 @@ function exportDeliverySlipPDF(order){
     doc.line(126, finalY, 196, finalY);
     doc.setFontSize(9);
     doc.setTextColor(120);
-    doc.text("Υπογραφή παραδίδοντος", 14, finalY+5);
-    doc.text("Υπογραφή παραλήπτη", 126, finalY+5);
+    doc.text(t("pdf_sig_sender"), 14, finalY+5);
+    doc.text(t("pdf_sig_receiver"), 126, finalY+5);
   }
 
   doc.save(`taksis_order-deltio-${order.order_number || order.id}.pdf`);
 }
 
 function exportOrdersPDF(ordersList, filename, title){
-  if (ordersList.length===0) return showToast("Δεν υπάρχουν δεδομένα για εξαγωγή");
-  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  if (ordersList.length===0) return showToast(t("toast_no_data_export"));
+  if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({orientation:"landscape"});
   setupGreekFont(doc);
@@ -578,7 +778,7 @@ function exportOrdersPDF(ordersList, filename, title){
   doc.text(title, 14, 15);
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`Εξαγωγή: ${formatDateEL(todayISO())}`, 14, 21);
+  doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())}`, 14, 21);
   const rows = [];
   ordersList.forEach(o=>{
     const cname = custName(o.customer_id);
@@ -588,7 +788,7 @@ function exportOrdersPDF(ordersList, filename, title){
   });
   doc.autoTable({
     startY: 26,
-    head: [["Αρ.","Ημ/νία","Πελάτης","Κωδ.","Είδος","Lot","BBD","Κιβ.","Κιλά","€/κιλό","Σύνολο"]],
+    head: [["#",t("h_shortdate"),t("h_customer"),t("h_short"),t("h_article"),"Lot","BBD",t("h_shortboxes"),t("h_kg_h"),t("h_shortprice"),t("h_shorttotal")]],
     body: rows,
     styles:{fontSize:8, font:"NotoSans"},
     headStyles:{fillColor:[232,161,61], textColor:30, font:"NotoSans", fontStyle:"bold"},
@@ -600,13 +800,13 @@ function exportOrdersPDF(ordersList, filename, title){
   doc.setFont("NotoSans","normal");
   doc.setFontSize(10);
   doc.setTextColor(20);
-  doc.text(`${ordersList.length} παραγγελίες · ${totalBoxes} κιβ. · ${totalWeight.toFixed(1)} κιλά · Σύνολο: ${formatEUR(totalValue)}`, 14, finalY+8);
+  doc.text(`${ordersList.length} ${t("pdf_orders_label")} · ${totalBoxes} ${t("h_shortboxes")} · ${totalWeight.toFixed(1)} ${t("kg")} · ${t("pdf_total_label")}: ${formatEUR(totalValue)}`, 14, finalY+8);
   doc.save(filename);
 }
 function exportDailyReportCSV(date){
   const dayOrders = state.orders.filter(o=>o.date===date);
-  if (dayOrders.length===0) return showToast("Δεν υπάρχουν παραγγελίες αυτή την ημέρα");
-  const headers = ["Πελάτης","Κιβώτια","Ποσό (€)"];
+  if (dayOrders.length===0) return showToast(t("toast_no_orders_today"));
+  const headers = [t("h_customer"),t("h_boxes_h"),t("h_amount")];
   const rows = dayOrders.map(o=>[custName(o.customer_id), orderTotalBoxes(o), orderTotal(o).toFixed(2)]);
   const totalBoxes = dayOrders.reduce((s,o)=>s+orderTotalBoxes(o),0);
   const totalValue = dayOrders.reduce((s,o)=>s+orderTotal(o),0);
@@ -615,13 +815,13 @@ function exportDailyReportCSV(date){
 }
 function exportDailyReportPDF(date){
   const dayOrders = state.orders.filter(o=>o.date===date);
-  if (dayOrders.length===0) return showToast("Δεν υπάρχουν παραγγελίες αυτή την ημέρα");
-  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  if (dayOrders.length===0) return showToast(t("toast_no_orders_today"));
+  if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   setupGreekFont(doc);
   doc.setFontSize(15);
-  doc.text("Ημερήσια Αναφορά Παραγγελιών", 14, 16);
+  doc.text(t("pdf_daily_report_title"), 14, 16);
   doc.setFontSize(11);
   doc.setTextColor(120);
   doc.text(formatDateEL(date), 14, 23);
@@ -630,7 +830,7 @@ function exportDailyReportPDF(date){
   const totalValue = dayOrders.reduce((s,o)=>s+orderTotal(o),0);
   doc.autoTable({
     startY: 29,
-    head: [["Πελάτης","Κιβώτια","Ποσό"]],
+    head: [[t("h_customer"),t("h_boxes_h"),t("h_shortamount")]],
     body: rows,
     foot: [["Σύνολο", String(totalBoxes), `${formatEUR(totalValue)}`]],
     styles:{fontSize:10, font:"NotoSans"},
@@ -640,9 +840,9 @@ function exportDailyReportPDF(date){
   doc.save(`taksis_order-imerisia-anafora-${date}.pdf`);
 }
 function exportCustomersCSV(){
-  const headers = ["Κωδικός","Όνομα","ΑΦΜ","Εμπορική επωνυμία","Διεύθυνση","Περιοχή","Τ.Κ.","Πόλη","Χώρα","Τηλέφωνο","Fax","Email","Email 2","Σημειώσεις"];
+  const headers = [t("h_code"),t("h_name"),t("h_vat"),t("h_commercial"),t("h_address"),t("h_area"),t("h_zip"),t("h_city"),t("h_country"),t("h_phone"),t("h_fax"),t("h_email"),t("h_email2"),t("h_notes")];
   const rows = state.customers.map(c=>[c.code||"",c.name,c.vat||"",c.commercial_name||"",c.address||"",c.area||"",c.zip||"",c.city||"",c.country||"",c.phone||"",c.fax||"",c.email||"",c.email2||"",c.notes||""]);
-  if (rows.length===0) return showToast("Δεν υπάρχουν πελάτες για εξαγωγή");
+  if (rows.length===0) return showToast(t("toast_no_customers_export"));
   downloadCSV(`taksis_order-pelates-${todayISO()}.csv`, headers, rows);
 }
 function computeCustomerStats(){
@@ -676,26 +876,26 @@ function computeArticleStats(){
 }
 function exportCustomerStatsCSV(){
   const rows = computeCustomerStats();
-  if (rows.length===0) return showToast("Δεν υπάρχουν δεδομένα για εξαγωγή");
-  const headers = ["Πελάτης","Παραγγελίες","Κιβώτια","Κιλά","Αξία (€)"];
+  if (rows.length===0) return showToast(t("toast_no_data_export"));
+  const headers = [t("h_customer"),t("h_orders"),t("h_boxes_h"),t("h_kg_h"),t("h_value_eur")];
   const data = rows.map(c=>[c.name, c.orders, c.boxes, c.weight.toFixed(1), c.value.toFixed(2)]);
   downloadCSV(`taksis_order-poso-ana-pelati-${todayISO()}.csv`, headers, data);
 }
 function exportCustomerStatsPDF(){
   const rows = computeCustomerStats();
-  if (rows.length===0) return showToast("Δεν υπάρχουν δεδομένα για εξαγωγή");
-  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  if (rows.length===0) return showToast(t("toast_no_data_export"));
+  if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   setupGreekFont(doc);
   doc.setFontSize(14);
-  doc.text("Ποσότητες ανά πελάτη", 14, 15);
+  doc.text(t("pdf_by_customer"), 14, 15);
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`Εξαγωγή: ${formatDateEL(todayISO())}`, 14, 21);
+  doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())}`, 14, 21);
   doc.autoTable({
     startY: 26,
-    head: [["Πελάτης","Παραγγελίες","Κιβώτια","Κιλά","Αξία"]],
+    head: [[t("h_customer"),t("h_orders"),t("h_boxes_h"),t("h_kg_h"),t("h_shortvalue")]],
     body: rows.map(c=>[c.name, String(c.orders), String(c.boxes), c.weight.toFixed(1), `${formatEUR(c.value)}`]),
     styles:{fontSize:9, font:"NotoSans"},
     headStyles:{fillColor:[29,158,117], textColor:255, font:"NotoSans", fontStyle:"bold"},
@@ -704,26 +904,26 @@ function exportCustomerStatsPDF(){
 }
 function exportArticleStatsCSV(){
   const rows = computeArticleStats();
-  if (rows.length===0) return showToast("Δεν υπάρχουν δεδομένα για εξαγωγή");
-  const headers = ["Κωδικός","Είδος","Κιβώτια","Κιλά","Αξία (€)"];
+  if (rows.length===0) return showToast(t("toast_no_data_export"));
+  const headers = [t("h_code"),t("h_article"),t("h_boxes_h"),t("h_kg_h"),t("h_value_eur")];
   const data = rows.map(a=>[a.code, a.name, a.boxes, a.weight.toFixed(1), a.value.toFixed(2)]);
   downloadCSV(`taksis_order-poso-ana-kodiko-${todayISO()}.csv`, headers, data);
 }
 function exportArticleStatsPDF(){
   const rows = computeArticleStats();
-  if (rows.length===0) return showToast("Δεν υπάρχουν δεδομένα για εξαγωγή");
-  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  if (rows.length===0) return showToast(t("toast_no_data_export"));
+  if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   setupGreekFont(doc);
   doc.setFontSize(14);
-  doc.text("Ποσότητες ανά κωδικό είδους", 14, 15);
+  doc.text(t("pdf_by_article"), 14, 15);
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`Εξαγωγή: ${formatDateEL(todayISO())}`, 14, 21);
+  doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())}`, 14, 21);
   doc.autoTable({
     startY: 26,
-    head: [["Κωδικός","Είδος","Κιβώτια","Κιλά","Αξία"]],
+    head: [[t("h_code"),t("h_article"),t("h_boxes_h"),t("h_kg_h"),t("h_shortvalue")]],
     body: rows.map(a=>[a.code, a.name, String(a.boxes), a.weight.toFixed(1), `${formatEUR(a.value)}`]),
     styles:{fontSize:9, font:"NotoSans"},
     headStyles:{fillColor:[29,158,117], textColor:255, font:"NotoSans", fontStyle:"bold"},
@@ -776,13 +976,13 @@ function getStockExportPairs(){
   return pairs;
 }
 function stockViewLabel(view){
-  return ({product:"Ανά προϊόν", code:"Ανά κωδικό", category:"Ανά κατηγορία", expiry:"Ανά ημ. λήξης", month:"Λήγουν τις επόμενες 30 ημέρες"})[view] || view;
+  return ({product:t("view_product"), code:t("view_code"), category:t("view_category"), expiry:t("view_expiry"), month:t("view_month")})[view] || view;
 }
 function exportStockCSV(){
   const pairs = getStockExportPairs();
-  if (pairs.length===0) return showToast("Δεν υπάρχουν δεδομένα stock για εξαγωγή");
+  if (pairs.length===0) return showToast(t("toast_no_stock_export"));
   const includeCategory = state.stockView === "category";
-  const headers = ["SSCC","Κωδικός είδους","Είδος", ...(includeCategory?["Κατηγορία"]:[]), "Ζώνη","Lot","BBD","Κιβώτια","Κιλά","Reference"];
+  const headers = ["SSCC",t("h_article_code"),t("h_article"), ...(includeCategory?[t("h_category")]:[]), t("h_zone"),"Lot","BBD",t("h_boxes_h"),t("h_kg_h"),"Reference"];
   const rows = pairs.map(({u,a})=>[
     u.sscc, u.article_code, a?a.name:"",
     ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
@@ -792,19 +992,19 @@ function exportStockCSV(){
 }
 function exportStockPDF(){
   const pairs = getStockExportPairs();
-  if (pairs.length===0) return showToast("Δεν υπάρχουν δεδομένα stock για εξαγωγή");
-  if (!window.jspdf) return showToast("Η βιβλιοθήκη PDF δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  if (pairs.length===0) return showToast(t("toast_no_stock_export"));
+  if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
   const includeCategory = state.stockView === "category";
   const doc = new jsPDF({orientation:"landscape"});
   setupGreekFont(doc);
   doc.setFontSize(14);
-  doc.text(`Απόθεμα — ${stockViewLabel(state.stockView)}`, 14, 15);
+  doc.text(`${t("pdf_stock_title")} — ${stockViewLabel(state.stockView)}`, 14, 15);
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`Εξαγωγή: ${formatDateEL(todayISO())}`, 14, 21);
+  doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())}`, 14, 21);
 
-  const head = ["Κωδ.","Είδος", ...(includeCategory?["Κατηγορία"]:[]), "Ζώνη","Lot","BBD","Κιβ.","Κιλά","Reference"];
+  const head = [t("h_short"),t("h_article"), ...(includeCategory?[t("h_category")]:[]), t("h_zone"),"Lot","BBD",t("h_shortboxes"),t("h_kg_h"),"Reference"];
   const body = pairs.map(({u,a})=>[
     u.article_code, a?a.name:"",
     ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
@@ -822,7 +1022,7 @@ function exportStockPDF(){
   const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || 30;
   doc.setFontSize(10);
   doc.setTextColor(20);
-  doc.text(`${pairs.length} παρτίδες · ${totalBoxes} κιβ. · ${totalWeight.toFixed(1)} κιλά`, 14, finalY+8);
+  doc.text(`${pairs.length} lots · ${totalBoxes} ${t("h_shortboxes")} · ${totalWeight.toFixed(1)} ${t("kg")}`, 14, finalY+8);
   doc.save(`taksis_order-stock-${state.stockView}-${todayISO()}.pdf`);
 }
 
@@ -837,17 +1037,17 @@ function render(){
     return;
   }
   if (!state.loaded){
-    root.innerHTML = `<div class="center-note">Φόρτωση...</div>`;
+    root.innerHTML = `<div class="center-note">${t("loading")}</div>`;
     return;
   }
   const tabs = [
-    ["orders","Νέα παραγγελία"],
-    ["dashboard","Επισκόπηση"],
-    ["history","Παραγγελίες"],
-    ["stock","Σύνοψη stock"],
-    ["products","Είδη"],
-    ["customers","Πελάτες"],
-    ["trash","Κάδος"],
+    ["orders",t("nav_orders")],
+    ["dashboard",t("nav_dashboard")],
+    ["history",t("nav_history")],
+    ["stock",t("nav_stock")],
+    ["products",t("nav_products")],
+    ["customers",t("nav_customers")],
+    ["trash",t("nav_trash")],
   ];
   const stats = computeQuickStats();
   const TAB_ICONS = {
@@ -873,21 +1073,24 @@ function render(){
   root.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand">${brandBlock}</div>
-        <div class="sidebar-module">taksis_order</div>
+        <div class="row" style="align-items:flex-start;">
+          <div class="sidebar-brand">${brandBlock}</div>
+          <button id="langToggleBtn" class="btn" style="padding:5px 10px;font-size:11px;">${t("lang_switch")}</button>
+        </div>
+        <div class="sidebar-module">${t("module_tag")}</div>
         <nav class="sidebar-nav">
           ${tabs.map(([id,label])=>`<button data-tab="${id}" class="${state.tab===id?'active':''}">${TAB_ICONS[id]||""}<span>${label}</span></button>`).join("")}
         </nav>
         <div class="sidebar-stats">
-          <div class="sidebar-stats-title">Σήμερα · ${formatDateEL(todayISO())}</div>
+          <div class="sidebar-stats-title">${state.lang==='en'?'Today':'Σήμερα'} · ${formatDateEL(todayISO())}</div>
           <button class="stat-row" data-tab="history">
-            <span class="dot brand"></span><span>Παραγγελίες σήμερα</span><strong>${stats.ordersToday}</strong>
+            <span class="dot brand"></span><span>${t("dash_today")}</span><strong>${stats.ordersToday}</strong>
           </button>
           <button class="stat-row" data-tab="stock">
-            <span class="dot ${stats.lowStock>0?'red':''}"></span><span>Χαμηλό απόθεμα</span><strong>${stats.lowStock}</strong>
+            <span class="dot ${stats.lowStock>0?'red':''}"></span><span>${t("dash_low_stock")}</span><strong>${stats.lowStock}</strong>
           </button>
           <button class="stat-row" data-tab="stock">
-            <span class="dot ${stats.expiring>0?'amber':''}"></span><span>Λήγουν σύντομα</span><strong>${stats.expiring}</strong>
+            <span class="dot ${stats.expiring>0?'amber':''}"></span><span>${t("dash_expiring")}</span><strong>${stats.expiring}</strong>
           </button>
         </div>
       </aside>
@@ -896,7 +1099,10 @@ function render(){
           <div class="chainbar"></div>
           <div class="top">
             <div class="brand">${brandBlock}</div>
-            <span class="tag">taksis_order</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button id="langToggleBtnMobile" class="btn" style="padding:5px 10px;font-size:11px;">${t("lang_switch")}</button>
+              <span class="tag">${t("module_tag")}</span>
+            </div>
           </div>
           <nav>${tabs.map(([id,label])=>`<button data-tab="${id}" class="${state.tab===id?'active':''}">${label}</button>`).join("")}</nav>
         </header>
@@ -991,9 +1197,9 @@ function renderOrders(){
   return `
     <div class="stack">
       <div>
-        <label>Πελάτης</label>
+        <label>${t("customer_label")}</label>
         <select id="customerSelect">
-          <option value="">— Επίλεξε πελάτη —</option>
+          <option value="">${t("select_customer")}</option>
           ${state.customers.map(c=>`<option value="${c.id}" ${state.customerId===c.id?'selected':''}>${esc(c.name)}</option>`).join("")}
         </select>
       </div>
@@ -1001,23 +1207,23 @@ function renderOrders(){
       <div class="card" style="border-color:var(--brand);">
         <div class="row" style="cursor:pointer;" data-togglequickorder="1">
           <div>
-            <div style="font-size:13px;font-weight:600;color:var(--brand-bright);">⚡ Γρήγορη παραγγελία (FEFO)</div>
-            <div class="muted">Γράψε κωδικό + ποσότητα, ένα ανά γραμμή — το σύστημα διαλέγει αυτόματα τα lots με την πιο κοντινή λήξη.</div>
+            <div style="font-size:13px;font-weight:600;color:var(--brand-bright);">${t("quick_order_title")}</div>
+            <div class="muted">${t("quick_order_desc")}</div>
           </div>
           <span class="muted2">${state.showQuickOrder?"▲":"▼"}</span>
         </div>
         ${state.showQuickOrder ? `
           <div class="stack" style="gap:8px;margin-top:10px;">
             <textarea id="quickOrderText" rows="4" placeholder="651019 5&#10;652614 2&#10;65155 10">${esc(state.quickOrderDraft||"")}</textarea>
-            <p class="muted" style="margin:0;">Μορφή: κωδικός, κενό ή κόμμα, μετά ποσότητα σε κιβώτια. Μία γραμμή ανά είδος. Μπορείς να επικολλήσεις κατευθείαν τη λίστα του πελάτη.</p>
-            <button class="btn btn-primary" id="applyQuickOrderBtn" style="align-self:flex-start;">Πρόσθεσε στο καλάθι (FEFO)</button>
+            <p class="muted" style="margin:0;">${t("quick_order_hint")}</p>
+            <button class="btn btn-primary" id="applyQuickOrderBtn" style="align-self:flex-start;">${t("quick_order_apply")}</button>
           </div>
         ` : ""}
       </div>
 
-      <input id="searchInput" placeholder="Αναζήτηση είδους ή κωδικού..." value="${esc(state.search)}" />
+      <input id="searchInput" placeholder="${t("search_article")}" value="${esc(state.search)}" />
       <div class="stack" style="gap:6px;">
-        ${filtered.length===0 ? `<p class="center-note">${state.articles.length===0?"Δεν έχεις εισάγει είδη ακόμα.":"Κανένα αποτέλεσμα."}</p>` : ""}
+        ${filtered.length===0 ? `<p class="center-note">${state.articles.length===0?t("no_articles"):t("no_results")}</p>` : ""}
         ${filtered.map(a=>{
           const {lots, boxes, weight} = articleTotals(a.code);
           const expanded = state.expandedArticle === a.code;
@@ -1027,14 +1233,14 @@ function renderOrders(){
           <div class="card${inCart?' in-cart':''}">
             <div class="row" style="cursor:pointer;" data-togglearticle="${a.code}">
               <div style="min-width:0;">
-                <div style="font-size:14px;font-weight:500;">${esc(a.name)}${inCart?` <span class="badge cart">${inCart.boxes} κιβ. στο καλάθι</span>`:""}</div>
-                <div class="muted">${esc(a.code)} · ${boxes} κιβ. · ${weight.toFixed(1)} κιλά${a.price?` · ${formatEUR(Number(a.price))}/κιβ.`:""} · ${availLots.length} lot${availLots.length===1?"":"s"}</div>
+                <div style="font-size:14px;font-weight:500;">${esc(a.name)}${inCart?` <span class="badge cart">${inCart.boxes} ${t("in_cart_badge")}</span>`:""}</div>
+                <div class="muted">${esc(a.code)} · ${boxes} ${t("boxes_short")} · ${weight.toFixed(1)} ${t("kg")}${a.price?` · ${formatEUR(Number(a.price))}/${t("boxes_short")}`:""} · ${availLots.length} ${t("lots_count")}${availLots.length===1?"":"s"}</div>
               </div>
               <span class="muted2">${expanded?"▲":"▼"}</span>
             </div>
             ${expanded ? `
               <div class="stack" style="gap:0;">
-                ${availLots.length===0?`<p class="muted" style="margin:8px 0 0;">Δεν υπάρχει διαθέσιμο απόθεμα.</p>`:""}
+                ${availLots.length===0?`<p class="muted" style="margin:8px 0 0;">${t("no_stock_available")}</p>`:""}
                 ${availLots.map(l=>{
                   const qty = state.cart[l.sscc] || 0;
                   return `
@@ -1042,7 +1248,7 @@ function renderOrders(){
                     <div class="row">
                       <div style="min-width:0;">
                         <div style="font-size:13px;">Lot ${esc(l.lot_code||"—")} ${bbdBadge(l.bbd)}</div>
-                        <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} κιβ. διαθέσιμα · ${Number(l.weight_kg).toFixed(1)} κιλά</div>
+                        <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} ${t("available_boxes")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
                       </div>
                       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                         <button class="qtybtn" data-lotqtydown="${l.sscc}">−</button>
@@ -1063,15 +1269,15 @@ function renderOrders(){
             ${Object.entries(cartByArticle).map(([code,v])=>`
               <div class="row" style="font-size:12px;">
                 <span class="muted">${esc(v.name)}</span>
-                <span class="muted2">${v.boxes} κιβ. · ${v.weight.toFixed(1)} κιλά</span>
+                <span class="muted2">${v.boxes} ${t("boxes_short")} · ${v.weight.toFixed(1)} ${t("kg")}</span>
               </div>
             `).join("")}
           </div>
           <div class="row" style="margin-bottom:8px;padding-top:8px;border-top:1px solid var(--border);">
-            <span class="muted">${cartTotalBoxes} κιβ. συνολικά · ${cartTotalWeight.toFixed(1)} κιλά</span>
+            <span class="muted">${cartTotalBoxes} ${t("boxes_short")} · ${cartTotalWeight.toFixed(1)} ${t("kg")}</span>
             ${cartTotalValue>0?`<span style="font-weight:650;color:var(--brand-bright);font-family:var(--font-display);">${formatEUR(cartTotalValue)}</span>`:""}
           </div>
-          <button class="btn btn-primary" id="submitOrderBtn" style="width:100%;padding:12px;">Καταχώρηση παραγγελίας</button>
+          <button class="btn btn-primary" id="submitOrderBtn" style="width:100%;padding:12px;">${t("submit_order")}</button>
         </div>` : ""}
     </div>
   `;
@@ -1100,7 +1306,7 @@ function applyQuickOrder(){
   const raw = (document.getElementById("quickOrderText")||{}).value || "";
   state.quickOrderDraft = raw;
   const lines = raw.split("\n").map(l=>l.trim()).filter(Boolean);
-  if (lines.length===0) return showToast("Γράψε τουλάχιστον μία γραμμή κωδικός/ποσότητα");
+  if (lines.length===0) return showToast(t("toast_quickorder_min"));
   let touchedCount = 0;
   const problems = [];
   let lastCode = null;
@@ -1125,9 +1331,9 @@ function applyQuickOrder(){
 }
 
 async function submitOrder(){
-  if (!state.customerId) return showToast("Επίλεξε πελάτη");
+  if (!state.customerId) return showToast(t("toast_select_customer"));
   const cartEntries = Object.entries(state.cart).filter(([,q])=>q>0);
-  if (cartEntries.length===0) return showToast("Πρόσθεσε προϊόντα");
+  if (cartEntries.length===0) return showToast(t("toast_add_products"));
   const items = [];
   for (const [sscc, qty] of cartEntries){
     const su = state.stockUnits.find(x=>x.sscc===sscc);
@@ -1139,7 +1345,7 @@ async function submitOrder(){
     const pricePerKg = a?.price_per_kg||0;
     items.push({sscc, article_code: su.article_code, article_name: a?.name||su.article_code, lot_code: su.lot_code, bbd: su.bbd, qty, weight, price: a?.price||0, price_per_kg: pricePerKg, value: weight*pricePerKg});
   }
-  if (items.length===0) return showToast("Πρόσθεσε προϊόντα");
+  if (items.length===0) return showToast(t("toast_add_products"));
   const order = {id: uid(), date: todayISO(), customer_id: state.customerId, items, created_at: new Date().toISOString()};
   const {data: insertedRows, error: orderErr} = await sb.from("orders").insert(order).select();
   if (orderErr) return showToast(`Σφάλμα αποθήκευσης παραγγελίας: ${orderErr.message}`);
@@ -1172,7 +1378,7 @@ async function deleteOrderAndRestore(orderId){
   if (delErr) return showToast(`Σφάλμα διαγραφής: ${delErr.message}`);
   await loadAll();
   if (missingCount>0) showToast(`Η παραγγελία διαγράφηκε. ${missingCount} lot(s) δεν βρέθηκαν — δεν επαναφέρθηκε το απόθεμά τους.`);
-  else showToast("Η παραγγελία διαγράφηκε και το απόθεμα επαναφέρθηκε");
+  else showToast(t("toast_order_deleted_restored"));
 }
 
 /* ---------------- ARTICLES (Είδη) TAB ---------------- */
@@ -1181,14 +1387,14 @@ function renderArticles(){
   return `
     <div class="stack">
       <div class="row" style="gap:8px;">
-        <input id="searchInput" placeholder="Αναζήτηση..." value="${esc(state.search)}" style="flex:1;" />
+        <input id="searchInput" placeholder="${t("search_placeholder")}" value="${esc(state.search)}" style="flex:1;" />
         <button class="btn icon" id="addArticleBtn">+</button>
         <button class="btn icon" id="toggleImportStock">⇪</button>
       </div>
       ${state.showImportStock ? renderStockImportBox() : ""}
       ${state.editingArticle ? renderArticleForm(state.editingArticle) : ""}
       <div class="stack" style="gap:6px;">
-        ${filtered.length===0 ? `<p class="center-note">Δεν υπάρχουν είδη.</p>` : ""}
+        ${filtered.length===0 ? `<p class="center-note">${t("no_articles_yet")}</p>` : ""}
         ${filtered.map(a=>{
           const {lots, boxes, weight} = articleTotals(a.code);
           const expanded = state.expandedArticle === a.code;
@@ -1197,28 +1403,28 @@ function renderArticles(){
             <div class="row">
               <div style="min-width:0;flex:1;cursor:pointer;" data-togglearticle="${a.code}">
                 <div style="font-size:14px;font-weight:500;">${esc(a.name)}</div>
-                <div class="muted">${esc(a.code)} · ${categoryBadges(a.code)} · ${boxes} κιβ. · ${weight.toFixed(1)} κιλά${a.price?` · ${formatEUR(Number(a.price))}/κιβ.`:""}${a.price_per_kg?` · ${formatEUR(Number(a.price_per_kg))}/κιλό`:""} · ${lots.length} lot${lots.length===1?"":"s"} ${expanded?"▲":"▼"}</div>
+                <div class="muted">${esc(a.code)} · ${categoryBadges(a.code)} · ${boxes} ${t("boxes_short")} · ${weight.toFixed(1)} ${t("kg")}${a.price?` · ${formatEUR(Number(a.price))}/${t("boxes_short")}`:""}${a.price_per_kg?` · ${formatEUR(Number(a.price_per_kg))}/${t("kg")}`:""} · ${lots.length} ${t("lots_count")}${lots.length===1?"":"s"} ${expanded?"▲":"▼"}</div>
               </div>
               <div style="display:flex;gap:2px;flex-shrink:0;">
-                <button class="btn link" data-editarticle="${a.code}">Επεξ.</button>
+                <button class="btn link" data-editarticle="${a.code}">${t("edit")}</button>
                 <button class="btn danger" data-delarticle="${a.code}">✕</button>
               </div>
             </div>
             ${expanded ? `
               <div class="stack" style="gap:0;">
-                ${lots.length===0?`<p class="muted" style="margin:8px 0 0;">Καμία παρτίδα.</p>`:""}
+                ${lots.length===0?`<p class="muted" style="margin:8px 0 0;">${t("no_lots")}</p>`:""}
                 ${lots.sort((x,y)=>(x.bbd||"9999").localeCompare(y.bbd||"9999")).map(l=>`
                   <div class="lotrow">
                     <div class="row">
                       <div style="min-width:0;">
                         <div style="font-size:13px;">Lot ${esc(l.lot_code||"—")} ${bbdBadge(l.bbd)}</div>
-                        <div class="muted">SSCC ${esc(l.sscc)} · ${zoneBadge(l.zone)} ${l.volume_boxes} κιβ. · ${Number(l.weight_kg).toFixed(1)} κιλά${l.reference?" · ref: "+esc(l.reference):""}</div>
+                        <div class="muted">SSCC ${esc(l.sscc)} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}${l.reference?" · ref: "+esc(l.reference):""}</div>
                       </div>
                       <button class="btn danger" data-dellot="${l.sscc}">✕</button>
                     </div>
                   </div>
                 `).join("")}
-                <button class="btn link" data-addlot="${a.code}" style="padding-left:0;margin-top:6px;">+ Παρτίδα</button>
+                <button class="btn link" data-addlot="${a.code}" style="padding-left:0;margin-top:6px;">${t("add_lot")}</button>
                 ${state.addingLotFor===a.code ? renderLotForm(a.code) : ""}
               </div>
             ` : ""}
@@ -1233,8 +1439,7 @@ function renderStockImportBox(){
   return `
     <div class="card" style="border-color:var(--border2);">
       <p class="muted" style="line-height:1.6;margin:0 0 8px;">
-        Ανέβασε το αρχείο stock (.csv) ή επικόλλησέ το. Αναγνωρίζει στήλες: <code>SSCC, Article Code, Article Name, Zone, Remaining Volume, #Weight, Lot Code, BBD, Reference</code>, και προαιρετικά μια στήλη τιμής (π.χ. <code>Price per kg</code>) για να ενημερωθεί η μέση τιμή/κιλό του είδους.
-        Κάθε γραμμή είναι μια παρτίδα (SSCC) — αν επανεισάγεις, οι παρτίδες με ίδιο SSCC ενημερώνονται.
+        ${t("import_stock_hint")}
       </p>
       <div class="row" style="justify-content:flex-start;gap:8px;margin-bottom:8px;">
         <input type="file" id="importFile" accept=".csv,.tsv,.txt" style="width:auto;padding:6px;font-size:12px;" />
@@ -1242,10 +1447,10 @@ function renderStockImportBox(){
       <textarea id="importText" rows="6" placeholder="SSCC\tArticle Code\tArticle Name\tZone\tRemaining Volume\t#Weight\tLot Code\tBBD\tReference"></textarea>
       <div class="row" style="margin-top:8px;justify-content:space-between;gap:8px;">
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary" id="doImportStockBtn">Εισαγωγή</button>
-          <button class="btn link" id="cancelImportStockBtn">Άκυρο</button>
+          <button class="btn btn-primary" id="doImportStockBtn">${t("import_button")}</button>
+          <button class="btn link" id="cancelImportStockBtn">${t("cancel")}</button>
         </div>
-        <button class="btn btn-danger-outline" id="clearStockBtn">🗑 Καθαρισμός όλου του stock</button>
+        <button class="btn btn-danger-outline" id="clearStockBtn">${t("clear_all_stock")}</button>
       </div>
     </div>
   `;
@@ -1256,24 +1461,24 @@ function renderArticleForm(a){
   return `
     <div class="card" style="border-color:var(--brand);">
       <div class="grid2" style="margin-bottom:8px;row-gap:10px;">
-        <div><label>Κωδικός</label><input id="f_code" placeholder="Κωδικός" value="${esc(a.code)}" ${a.isNew?'':'disabled'} /></div>
-        <div><label>Όνομα</label><input id="f_name" placeholder="Όνομα" value="${esc(a.name)}" /></div>
-        <div><label>Τιμή (€/κιβ.)</label><input id="f_price" type="number" step="0.01" placeholder="0" value="${a.price ?? 0}" /></div>
-        <div><label>Μέση τιμή (€/κιλό)</label><input id="f_price_per_kg" type="number" step="0.01" placeholder="0" value="${a.price_per_kg ?? 0}" /></div>
+        <div><label>${state.lang==='en'?'Code':'Κωδικός'}</label><input id="f_code" placeholder="${state.lang==='en'?'Code':'Κωδικός'}" value="${esc(a.code)}" ${a.isNew?'':'disabled'} /></div>
+        <div><label>${state.lang==='en'?'Name':'Όνομα'}</label><input id="f_name" placeholder="${state.lang==='en'?'Name':'Όνομα'}" value="${esc(a.name)}" /></div>
+        <div><label>${t("price_per_box")}</label><input id="f_price" type="number" step="0.01" placeholder="0" value="${a.price ?? 0}" /></div>
+        <div><label>${t("price_per_kg")}</label><input id="f_price_per_kg" type="number" step="0.01" placeholder="0" value="${a.price_per_kg ?? 0}" /></div>
       </div>
-      <p class="muted" style="margin:8px 0 4px;">Custom πεδία</p>
+      <p class="muted" style="margin:8px 0 4px;">${t("custom_fields")}</p>
       <div id="customFieldsList" class="stack" style="gap:6px;">
         ${customEntries.map(([k,v])=>`
           <div class="row" style="gap:6px;">
-            <input class="cf-key" placeholder="πεδίο" value="${esc(k)}" style="width:100px;" />
-            <input class="cf-val" placeholder="τιμή" value="${esc(v)}" style="flex:1;" />
+            <input class="cf-key" placeholder="${state.lang==='en'?'field':'πεδίο'}" value="${esc(k)}" style="width:100px;" />
+            <input class="cf-val" placeholder="${state.lang==='en'?'value':'τιμή'}" value="${esc(v)}" style="flex:1;" />
             <button class="btn danger" data-removecf="1">✕</button>
           </div>`).join("")}
       </div>
-      <button class="btn link" id="addCustomFieldBtn" style="padding-left:0;">+ πεδίο</button>
+      <button class="btn link" id="addCustomFieldBtn" style="padding-left:0;">${t("add_field")}</button>
       <div class="row" style="margin-top:8px;justify-content:flex-start;gap:8px;">
-        <button class="btn btn-primary" id="saveArticleBtn">Αποθήκευση</button>
-        <button class="btn link" id="cancelArticleBtn">Άκυρο</button>
+        <button class="btn btn-primary" id="saveArticleBtn">${t("save")}</button>
+        <button class="btn link" id="cancelArticleBtn">${t("cancel")}</button>
       </div>
     </div>
   `;
@@ -1283,17 +1488,17 @@ function renderLotForm(articleCode){
   return `
     <div class="card" style="border-color:var(--brand);margin-top:6px;">
       <div class="grid2" style="row-gap:10px;">
-        <div><label>SSCC (προαιρετικό)</label><input id="l_sscc" placeholder="π.χ. 8560026..." /></div>
-        <div><label>Ζώνη</label><input id="l_zone" placeholder="fresh / frozen" /></div>
-        <div><label>Κιβώτια</label><input id="l_boxes" type="number" placeholder="0" value="0" /></div>
-        <div><label>Κιλά</label><input id="l_weight" type="number" step="0.01" placeholder="0" value="0" /></div>
-        <div><label>Lot code</label><input id="l_lot" placeholder="π.χ. 06/05/2026" /></div>
-        <div><label>BBD (ημ. λήξης)</label><input id="l_bbd" type="date" /></div>
-        <div style="grid-column:1/3;"><label>Reference</label><input id="l_reference" placeholder="Προαιρετικό" /></div>
+        <div><label>${t("sscc_optional")}</label><input id="l_sscc" placeholder="e.g. 8560026..." /></div>
+        <div><label>${t("zone_label")}</label><input id="l_zone" placeholder="fresh / frozen" /></div>
+        <div><label>${t("boxes")}</label><input id="l_boxes" type="number" placeholder="0" value="0" /></div>
+        <div><label>${t("kg")}</label><input id="l_weight" type="number" step="0.01" placeholder="0" value="0" /></div>
+        <div><label>${t("lot_code_label")}</label><input id="l_lot" placeholder="e.g. 06/05/2026" /></div>
+        <div><label>${t("bbd_label")}</label><input id="l_bbd" type="date" /></div>
+        <div style="grid-column:1/3;"><label>${t("reference_label")}</label><input id="l_reference" placeholder="${state.lang==='en'?'Optional':'Προαιρετικό'}" /></div>
       </div>
       <div class="row" style="margin-top:8px;justify-content:flex-start;gap:8px;">
-        <button class="btn btn-primary" id="saveLotBtn" data-article="${articleCode}">Αποθήκευση παρτίδας</button>
-        <button class="btn link" id="cancelLotBtn">Άκυρο</button>
+        <button class="btn btn-primary" id="saveLotBtn" data-article="${articleCode}">${t("save_lot")}</button>
+        <button class="btn link" id="cancelLotBtn">${t("cancel")}</button>
       </div>
     </div>
   `;
@@ -1302,7 +1507,7 @@ function renderLotForm(articleCode){
 /* ---------------- CUSTOMERS TAB ---------------- */
 function renderCustomers(){
   if (state.editingCustomer){
-    return `<div class="stack">${state.viewingCustomerId?`<button class="btn link" data-backtocustomers="1" style="padding-left:0;align-self:flex-start;">← Πίσω</button>`:""}${renderCustomerForm(state.editingCustomer)}</div>`;
+    return `<div class="stack">${state.viewingCustomerId?`<button class="btn link" data-backtocustomers="1" style="padding-left:0;align-self:flex-start;">${t("back_to_customers")}</button>`:""}${renderCustomerForm(state.editingCustomer)}</div>`;
   }
   if (state.viewingCustomerId) return renderCustomerDetail(state.viewingCustomerId);
   const filtered = state.customers.filter(c => !state.search ||
@@ -1313,7 +1518,7 @@ function renderCustomers(){
   return `
     <div class="stack">
       <div class="row" style="gap:8px;">
-        <input id="searchInput" placeholder="Αναζήτηση όνομα, κωδικό, πόλη..." value="${esc(state.search)}" style="flex:1;" />
+        <input id="searchInput" placeholder="${state.lang==='en'?'Search name, code, city...':'Αναζήτηση όνομα, κωδικό, πόλη...'}" value="${esc(state.search)}" style="flex:1;" />
         <button class="btn icon" id="addCustomerBtn">+</button>
         <button class="btn icon" id="toggleImportC">⇪</button>
         <button class="btn icon" id="exportCustomersBtn">⇩</button>
@@ -1321,19 +1526,21 @@ function renderCustomers(){
       ${state.showImportC ? `
         <div class="card" style="border-color:var(--border2);">
           <p class="muted" style="line-height:1.6;margin:0 0 8px;">
-            Ανέβασε αρχείο .csv, ή επικόλλησε πίνακα. Αναγνωρίζει στήλες: <code>Customer code, Name, VAT, Commercial name, Address, Area, Zip code, City, Country, Phone number, Fax, Email, Email 2</code> (μόνο <code>name</code> υποχρεωτικό).
+            ${state.lang==='en'
+              ? 'Upload a .csv file, or paste a table. Recognizes columns: <code>Customer code, Name, VAT, Commercial name, Address, Area, Zip code, City, Country, Phone number, Fax, Email, Email 2</code> (only <code>name</code> is required).'
+              : 'Ανέβασε αρχείο .csv, ή επικόλλησε πίνακα. Αναγνωρίζει στήλες: <code>Customer code, Name, VAT, Commercial name, Address, Area, Zip code, City, Country, Phone number, Fax, Email, Email 2</code> (μόνο <code>name</code> υποχρεωτικό).'}
           </p>
           <div class="row" style="justify-content:flex-start;gap:8px;margin-bottom:8px;">
             <input type="file" id="importFile" accept=".csv,.tsv,.txt" style="width:auto;padding:6px;font-size:12px;" />
           </div>
           <textarea id="importText" rows="5" placeholder="Customer code,Name,VAT,...,Phone number,Fax,Email,Email 2"></textarea>
           <div class="row" style="margin-top:8px;justify-content:flex-start;gap:8px;">
-            <button class="btn btn-primary" id="doImportCBtn">Εισαγωγή</button>
-            <button class="btn link" id="cancelImportCBtn">Άκυρο</button>
+            <button class="btn btn-primary" id="doImportCBtn">${t("import_button")}</button>
+            <button class="btn link" id="cancelImportCBtn">${t("cancel")}</button>
           </div>
         </div>` : ""}
       <div class="stack" style="gap:6px;">
-        ${filtered.length===0 ? `<p class="center-note">Δεν υπάρχουν πελάτες.</p>` : ""}
+        ${filtered.length===0 ? `<p class="center-note">${t("no_customers")}</p>` : ""}
         ${filtered.map(c=>{
           const loc = [c.area, c.city, c.country].filter(Boolean).join(", ");
           return `
@@ -1344,7 +1551,7 @@ function renderCustomers(){
                 <div class="muted">${c.code?esc(c.code)+" · ":""}${loc||"—"}</div>
               </div>
               <div style="display:flex;gap:2px;flex-shrink:0;" onclick="event.stopPropagation()">
-                <button class="btn link" data-editcustomer="${c.id}">Επεξ.</button>
+                <button class="btn link" data-editcustomer="${c.id}">${t("edit")}</button>
                 <button class="btn danger" data-delcustomer="${c.id}">✕</button>
               </div>
             </div>
@@ -1359,48 +1566,48 @@ function renderCustomerForm(c){
   const sameAsBilling = c.delivery_same_as_billing !== false;
   return `
     <div class="card" style="border-color:var(--brand);">
-      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;">Στοιχεία</p>
+      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;">${state.lang==='en'?'Details':'Στοιχεία'}</p>
       <div class="grid2" style="gap:8px;">
-        <input id="c_code" placeholder="Κωδικός πελάτη" value="${esc(c.code||"")}" />
-        <input id="c_name" placeholder="Όνομα *" value="${esc(c.name||"")}" />
-        <input id="c_vat" placeholder="ΑΦΜ" value="${esc(c.vat||"")}" />
-        <input id="c_commercial" placeholder="Εμπορική επωνυμία" value="${esc(c.commercial_name||"")}" />
+        <input id="c_code" placeholder="${t("customer_code")}" value="${esc(c.code||"")}" />
+        <input id="c_name" placeholder="${t("customer_name")}" value="${esc(c.name||"")}" />
+        <input id="c_vat" placeholder="${t("vat")}" value="${esc(c.vat||"")}" />
+        <input id="c_commercial" placeholder="${t("commercial_name")}" value="${esc(c.commercial_name||"")}" />
       </div>
 
-      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">Διεύθυνση χρέωσης</p>
+      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">${t("billing_address_title")}</p>
       <div class="grid2" style="gap:8px;">
-        <input id="c_address" placeholder="Διεύθυνση" value="${esc(c.address||"")}" style="grid-column:1/3;" />
-        <input id="c_area" placeholder="Περιοχή" value="${esc(c.area||"")}" />
-        <input id="c_zip" placeholder="Τ.Κ." value="${esc(c.zip||"")}" />
-        <input id="c_city" placeholder="Πόλη" value="${esc(c.city||"")}" />
-        <input id="c_country" placeholder="Χώρα" value="${esc(c.country||"")}" />
+        <input id="c_address" placeholder="${t("address")}" value="${esc(c.address||"")}" style="grid-column:1/3;" />
+        <input id="c_area" placeholder="${t("area")}" value="${esc(c.area||"")}" />
+        <input id="c_zip" placeholder="${t("zip")}" value="${esc(c.zip||"")}" />
+        <input id="c_city" placeholder="${t("city")}" value="${esc(c.city||"")}" />
+        <input id="c_country" placeholder="${t("country")}" value="${esc(c.country||"")}" />
       </div>
 
-      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">Διεύθυνση παράδοσης</p>
+      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">${t("delivery_address_title")}</p>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;margin-bottom:8px;">
         <input type="checkbox" id="c_delivery_same" ${sameAsBilling?'checked':''} style="width:auto;" />
-        Ίδια με τη διεύθυνση χρέωσης
+        ${t("same_as_billing")}
       </label>
       <div id="deliveryAddressFields" class="grid2" style="gap:8px;${sameAsBilling?'display:none;':''}">
-        <input id="c_delivery_address" placeholder="Διεύθυνση παράδοσης" value="${esc(c.delivery_address||"")}" style="grid-column:1/3;" />
-        <input id="c_delivery_area" placeholder="Περιοχή" value="${esc(c.delivery_area||"")}" />
-        <input id="c_delivery_zip" placeholder="Τ.Κ." value="${esc(c.delivery_zip||"")}" />
-        <input id="c_delivery_city" placeholder="Πόλη" value="${esc(c.delivery_city||"")}" />
-        <input id="c_delivery_country" placeholder="Χώρα" value="${esc(c.delivery_country||"")}" />
+        <input id="c_delivery_address" placeholder="${t("delivery_address_title")}" value="${esc(c.delivery_address||"")}" style="grid-column:1/3;" />
+        <input id="c_delivery_area" placeholder="${t("area")}" value="${esc(c.delivery_area||"")}" />
+        <input id="c_delivery_zip" placeholder="${t("zip")}" value="${esc(c.delivery_zip||"")}" />
+        <input id="c_delivery_city" placeholder="${t("city")}" value="${esc(c.delivery_city||"")}" />
+        <input id="c_delivery_country" placeholder="${t("country")}" value="${esc(c.delivery_country||"")}" />
       </div>
 
-      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">Επικοινωνία</p>
+      <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">${state.lang==='en'?'Contact':'Επικοινωνία'}</p>
       <div class="grid2" style="gap:8px;">
-        <input id="c_phone" placeholder="Τηλέφωνο" value="${esc(c.phone||"")}" />
-        <input id="c_fax" placeholder="Fax" value="${esc(c.fax||"")}" />
-        <input id="c_email" placeholder="Email" value="${esc(c.email||"")}" />
-        <input id="c_email2" placeholder="Email 2" value="${esc(c.email2||"")}" />
-        <input id="c_notes" placeholder="Σημειώσεις" value="${esc(c.notes||"")}" style="grid-column:1/3;" />
+        <input id="c_phone" placeholder="${t("phone")}" value="${esc(c.phone||"")}" />
+        <input id="c_fax" placeholder="${t("fax")}" value="${esc(c.fax||"")}" />
+        <input id="c_email" placeholder="${t("email")}" value="${esc(c.email||"")}" />
+        <input id="c_email2" placeholder="${t("email2")}" value="${esc(c.email2||"")}" />
+        <input id="c_notes" placeholder="${t("notes")}" value="${esc(c.notes||"")}" style="grid-column:1/3;" />
       </div>
 
       <div class="row" style="margin-top:12px;justify-content:flex-start;gap:8px;">
-        <button class="btn btn-primary" id="saveCustomerBtn">Αποθήκευση</button>
-        <button class="btn link" id="cancelCustomerBtn">Άκυρο</button>
+        <button class="btn btn-primary" id="saveCustomerBtn">${t("save")}</button>
+        <button class="btn link" id="cancelCustomerBtn">${t("cancel")}</button>
       </div>
     </div>
   `;
@@ -1408,7 +1615,7 @@ function renderCustomerForm(c){
 
 function renderCustomerDetail(customerId){
   const c = state.customers.find(x=>x.id===customerId);
-  if (!c) return `<p class="center-note">Ο πελάτης δεν βρέθηκε.</p><button class="btn link" data-backtocustomers="1">← Πίσω στους πελάτες</button>`;
+  if (!c) return `<p class="center-note">${state.lang==='en'?'Customer not found.':'Ο πελάτης δεν βρέθηκε.'}</p><button class="btn link" data-backtocustomers="1">${t("back_to_customers")}</button>`;
 
   const stats = computeCustomerStats().find(s=>s.id===customerId) || {orders:0, boxes:0, weight:0, value:0, byArticle:{}};
   const articleBreakdown = Object.values(stats.byArticle).sort((a,b)=>b.boxes-a.boxes);
@@ -1421,55 +1628,55 @@ function renderCustomerDetail(customerId){
 
   return `
     <div class="stack">
-      <button class="btn link" data-backtocustomers="1" style="padding-left:0;align-self:flex-start;">← Πίσω στους πελάτες</button>
+      <button class="btn link" data-backtocustomers="1" style="padding-left:0;align-self:flex-start;">${t("back_to_customers")}</button>
 
       <div class="row" style="align-items:flex-start;">
         <div>
           <div style="font-family:var(--font-display);font-size:20px;font-weight:600;">${esc(c.name)}</div>
-          <div class="muted">${c.code?esc(c.code):""}${c.vat?` · ΑΦΜ ${esc(c.vat)}`:""}</div>
+          <div class="muted">${c.code?esc(c.code):""}${c.vat?` · ${t("vat")} ${esc(c.vat)}`:""}</div>
         </div>
-        <button class="btn btn-primary" data-editcustomer="${c.id}">Επεξεργασία</button>
+        <button class="btn btn-primary" data-editcustomer="${c.id}">${t("edit")}</button>
       </div>
 
       <div class="grid2">
-        <div class="stat"><div class="muted">Παραγγελίες</div><div class="v">${stats.orders}</div></div>
-        <div class="stat accent-amber"><div class="muted">Τζίρος</div><div class="v">${formatEUR(stats.value)}</div></div>
-        <div class="stat"><div class="muted">Κιβώτια</div><div class="v">${stats.boxes}</div></div>
-        <div class="stat"><div class="muted">Κιλά</div><div class="v">${stats.weight.toFixed(1)}</div></div>
+        <div class="stat"><div class="muted">${t("cust_orders")}</div><div class="v">${stats.orders}</div></div>
+        <div class="stat accent-amber"><div class="muted">${t("cust_revenue")}</div><div class="v">${formatEUR(stats.value)}</div></div>
+        <div class="stat"><div class="muted">${t("cust_boxes")}</div><div class="v">${stats.boxes}</div></div>
+        <div class="stat"><div class="muted">${t("cust_kg")}</div><div class="v">${stats.weight.toFixed(1)}</div></div>
       </div>
 
       <div class="grid2">
         <div class="card">
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">Διεύθυνση χρέωσης</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">${t("billing_address_title")}</p>
           ${billingLines.length?billingLines.map(l=>`<div style="font-size:13px;">${esc(l)}</div>`).join(""):`<p class="muted">—</p>`}
         </div>
         <div class="card">
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">Διεύθυνση παράδοσης ${deliveryIsSame?'<span class="badge">ίδια</span>':''}</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">${t("delivery_address_title")} ${deliveryIsSame?`<span class="badge">${state.lang==='en'?'same':'ίδια'}</span>`:''}</p>
           ${deliveryLines.length?deliveryLines.map(l=>`<div style="font-size:13px;">${esc(l)}</div>`).join(""):`<p class="muted">—</p>`}
         </div>
       </div>
 
       <div class="card">
-        <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">Επικοινωνία</p>
+        <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">${state.lang==='en'?'Contact':'Επικοινωνία'}</p>
         <div class="grid2" style="font-size:13px;row-gap:6px;">
-          ${c.phone?`<div>Τηλ: ${esc(c.phone)}</div>`:""}
-          ${c.fax?`<div>Fax: ${esc(c.fax)}</div>`:""}
-          ${c.email?`<div>Email: ${esc(c.email)}</div>`:""}
-          ${c.email2?`<div>Email 2: ${esc(c.email2)}</div>`:""}
-          ${c.commercial_name && c.commercial_name!==c.name?`<div style="grid-column:1/3;">Εμπορική επωνυμία: ${esc(c.commercial_name)}</div>`:""}
-          ${c.notes?`<div style="grid-column:1/3;">Σημειώσεις: ${esc(c.notes)}</div>`:""}
+          ${c.phone?`<div>${t("phone")}: ${esc(c.phone)}</div>`:""}
+          ${c.fax?`<div>${t("fax")}: ${esc(c.fax)}</div>`:""}
+          ${c.email?`<div>${t("email")}: ${esc(c.email)}</div>`:""}
+          ${c.email2?`<div>${t("email2")}: ${esc(c.email2)}</div>`:""}
+          ${c.commercial_name && c.commercial_name!==c.name?`<div style="grid-column:1/3;">${t("commercial_name")}: ${esc(c.commercial_name)}</div>`:""}
+          ${c.notes?`<div style="grid-column:1/3;">${t("notes")}: ${esc(c.notes)}</div>`:""}
           ${!c.phone && !c.fax && !c.email && !c.email2 && !c.notes ? `<p class="muted">—</p>` : ""}
         </div>
       </div>
 
       <div>
-        <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Ποσότητες ανά κωδικό είδους</p>
+        <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">${t("cust_per_article")}</p>
         <div class="stack" style="gap:6px;">
-          ${articleBreakdown.length===0?`<p class="center-note">Καμία παραγγελία ακόμα.</p>`:""}
+          ${articleBreakdown.length===0?`<p class="center-note">${t("dash_no_orders")}</p>`:""}
           ${articleBreakdown.map(a=>`
             <div class="card row">
               <div style="font-size:13px;">${esc(a.name)}</div>
-              <span class="muted2">${a.boxes} κιβ. · ${a.weight.toFixed(1)} κιλά${a.value>0?` · ${formatEUR(a.value)}`:""}</span>
+              <span class="muted2">${a.boxes} ${t("boxes_short")} · ${a.weight.toFixed(1)} ${t("kg")}${a.value>0?` · ${formatEUR(a.value)}`:""}</span>
             </div>
           `).join("")}
         </div>
@@ -1477,16 +1684,16 @@ function renderCustomerDetail(customerId){
 
       <div>
         <div class="row" style="margin-bottom:8px;">
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">Πρόσφατες παραγγελίες</p>
-          ${custOrders.length>5?`<button class="btn link" data-gotohistorycustomer="${c.id}" style="padding-right:0;">Όλες (${custOrders.length}) →</button>`:""}
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">${t("cust_recent_orders")}</p>
+          ${custOrders.length>5?`<button class="btn link" data-gotohistorycustomer="${c.id}" style="padding-right:0;">${t("cust_all_orders")} (${custOrders.length}) →</button>`:""}
         </div>
         <div class="stack" style="gap:6px;">
-          ${recentOrders.length===0?`<p class="center-note">Καμία παραγγελία ακόμα.</p>`:""}
+          ${recentOrders.length===0?`<p class="center-note">${t("dash_no_orders")}</p>`:""}
           ${recentOrders.map(o=>`
             <div class="card row">
               <div>
                 <div style="font-size:13px;">${o.order_number?esc(o.order_number)+" · ":""}${o.date}</div>
-                <div class="muted">${orderTotalBoxes(o)} κιβ. · ${orderTotalWeight(o).toFixed(1)} κιλά</div>
+                <div class="muted">${orderTotalBoxes(o)} ${t("boxes_short")} · ${orderTotalWeight(o).toFixed(1)} ${t("kg")}</div>
               </div>
               ${orderTotal(o)>0?`<span style="font-weight:600;color:var(--brand-bright);font-family:var(--font-display);">${formatEUR(orderTotal(o))}</span>`:""}
             </div>
@@ -1510,32 +1717,32 @@ function renderHistory(){
     <div class="stack">
       <div class="row" style="justify-content:space-between;">
         <div class="tabs2" style="margin-bottom:0;">
-          <button data-hview="day" class="${state.historyView==='day'?'active':''}">Ανά ημέρα</button>
-          <button data-hview="customer" class="${state.historyView==='customer'?'active':''}">Ανά πελάτη</button>
+          <button data-hview="day" class="${state.historyView==='day'?'active':''}">${t("view_day")}</button>
+          <button data-hview="customer" class="${state.historyView==='customer'?'active':''}">${t("view_customer")}</button>
         </div>
       </div>
       ${state.historyView==='day' ? `
         <div class="tabs2" style="margin-bottom:0;">
-          <button data-datemode="single" class="${state.historyDateMode==='single'?'active':''}">Συγκεκριμένη ημέρα</button>
-          <button data-datemode="range" class="${state.historyDateMode==='range'?'active':''}">Περίοδος</button>
+          <button data-datemode="single" class="${state.historyDateMode==='single'?'active':''}">${t("date_specific")}</button>
+          <button data-datemode="range" class="${state.historyDateMode==='range'?'active':''}">${t("date_range")}</button>
         </div>
         ${state.historyDateMode==='single' ? `
           <input type="date" id="historyDateInput" value="${state.historyDate}" style="width:auto;" />
         ` : `
           <div class="row" style="gap:8px;flex-wrap:wrap;">
             <div>
-              <label>Από</label>
+              <label>${t("from")}</label>
               <input type="date" id="historyRangeFrom" value="${state.historyRange?state.historyRange.from:state.historyDate}" style="width:auto;" />
             </div>
             <div>
-              <label>Έως</label>
+              <label>${t("to")}</label>
               <input type="date" id="historyRangeTo" value="${state.historyRange?state.historyRange.to:state.historyDate}" style="width:auto;" />
             </div>
           </div>
         `}
       ` : `
         <select id="historyCustomerSelect">
-          <option value="">— Επίλεξε πελάτη —</option>
+          <option value="">${t("select_customer")}</option>
           ${state.customers.map(c=>`<option value="${c.id}" ${state.historyCustomer===c.id?'selected':''}>${esc(c.name)}</option>`).join("")}
         </select>
       `}
@@ -1544,11 +1751,11 @@ function renderHistory(){
         <div class="row" style="flex-wrap:wrap;gap:8px;">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;width:auto;">
             <input type="checkbox" id="selectAllOrders" style="width:auto;" ${allSelected?'checked':''} />
-            ${selectedCount>0 ? `${selectedCount} επιλεγμένες` : "Επιλογή όλων"}
+            ${selectedCount>0 ? `${selectedCount} ${t("selected_count")}` : t("select_all")}
           </label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="btn" id="exportOrdersCsvBtn">⇩ CSV${selectedCount>0?` (${selectedCount})`:""}</button>
-            <button class="btn" id="exportOrdersPdfBtn">⇩ PDF${selectedCount>0?` (${selectedCount})`:""}</button>
+            <button class="btn" id="exportOrdersCsvBtn">${t("export_csv")}${selectedCount>0?` (${selectedCount})`:""}</button>
+            <button class="btn" id="exportOrdersPdfBtn">${t("export_pdf")}${selectedCount>0?` (${selectedCount})`:""}</button>
           </div>
         </div>
       ` : ""}
@@ -1556,10 +1763,10 @@ function renderHistory(){
       ${state.historyView==='day' && !isRange && dayOrders.length>0 ? `
         <div class="card" style="border-color:var(--border2);">
           <div class="row">
-            <span class="muted">Ημερήσια αναφορά (πελάτης · κιβώτια · ποσό)</span>
+            <span class="muted">${t("daily_report")}</span>
             <div style="display:flex;gap:6px;">
-              <button class="btn" id="dailyReportCsvBtn">⇩ CSV</button>
-              <button class="btn" id="dailyReportPdfBtn">⇩ PDF</button>
+              <button class="btn" id="dailyReportCsvBtn">${t("export_csv")}</button>
+              <button class="btn" id="dailyReportPdfBtn">${t("export_pdf")}</button>
             </div>
           </div>
         </div>
@@ -1567,10 +1774,10 @@ function renderHistory(){
 
       <div class="stack" style="gap:6px;">
         ${state.historyView==='day' ? `
-          ${dayOrders.length===0 ? `<p class="center-note">Καμία παραγγελία ${isRange?"σε αυτή την περίοδο":"αυτή την ημέρα"}.</p>` : ""}
+          ${dayOrders.length===0 ? `<p class="center-note">${isRange?t("no_orders_period"):t("no_orders_today")}</p>` : ""}
           ${dayOrders.map(o=>renderOrderCard(o,isRange)).join("")}
         ` : `
-          ${state.historyCustomer && customerOrders.length===0 ? `<p class="center-note">Καμία παραγγελία για αυτόν τον πελάτη.</p>` : ""}
+          ${state.historyCustomer && customerOrders.length===0 ? `<p class="center-note">${t("no_orders_customer")}</p>` : ""}
           ${customerOrders.map(o=>renderOrderCard(o,true)).join("")}
         `}
       </div>
@@ -1590,7 +1797,7 @@ function renderOrderCard(o, showDate){
           <div>
             <div style="font-size:14px;font-weight:500;">${esc(custName(o.customer_id))} ${o.order_number?`<span class="muted2" style="font-weight:400;font-size:11px;">${esc(o.order_number)}</span>`:""}</div>
             ${showDate?`<div class="muted">${o.date}</div>`:""}
-            <div class="muted">${totalB} κιβ. · ${totalW.toFixed(1)} κιλά</div>
+            <div class="muted">${totalB} ${t("boxes_short")} · ${totalW.toFixed(1)} ${t("kg")}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -1599,13 +1806,13 @@ function renderOrderCard(o, showDate){
         </div>
       </div>
       <ul style="margin:0 0 8px;padding-left:40px;color:var(--muted);font-size:12px;">
-        ${o.items.map(i=>`<li>${i.qty} κιβ. (${Number(i.weight||0).toFixed(1)} κιλά) × ${esc(i.article_name)} ${i.lot_code?`(lot ${esc(i.lot_code)})`:""}</li>`).join("")}
+        ${o.items.map(i=>`<li>${i.qty} ${t("boxes_short")} (${Number(i.weight||0).toFixed(1)} ${t("kg")}) × ${esc(i.article_name)} ${i.lot_code?`(lot ${esc(i.lot_code)})`:""}</li>`).join("")}
       </ul>
       <div class="row" style="padding-left:40px;flex-wrap:wrap;gap:8px;">
         <select data-orderstatus="${o.id}" style="width:auto;font-size:12px;padding:6px 8px;">
-          ${ORDER_STATUSES.map(s=>`<option value="${s.id}" ${(o.status||"")===s.id?'selected':''}>${s.label}</option>`).join("")}
+          ${ORDER_STATUSES.map(s=>`<option value="${s.id}" ${(o.status||"")===s.id?'selected':''}>${t(s.key)}</option>`).join("")}
         </select>
-        <button class="btn" data-deliveryslip="${o.id}" style="font-size:12px;padding:6px 10px;">📄 Δελτίο Αποστολής</button>
+        <button class="btn" data-deliveryslip="${o.id}" style="font-size:12px;padding:6px 10px;">${t("delivery_slip")}</button>
       </div>
     </div>
   `;
@@ -1621,11 +1828,11 @@ function articleCardHTML(a){
       <div class="row" style="cursor:pointer;" data-togglestockarticle="${a.code}">
         <div>
           <div style="font-size:14px;">${esc(a.name)}</div>
-          <div class="muted">${esc(a.code)} · ${categoryBadges(a.code)} · ${lots.length} lot${lots.length===1?"":"s"}${a.price_per_kg?` · ${formatEUR(Number(a.price_per_kg))}/κιλό`:""}</div>
+          <div class="muted">${esc(a.code)} · ${categoryBadges(a.code)} · ${lots.length} ${t("lots_count")}${lots.length===1?"":"s"}${a.price_per_kg?` · ${formatEUR(Number(a.price_per_kg))}/${t("kg")}`:""}</div>
         </div>
         <div style="text-align:right;">
-          <div style="font-weight:600;${low?'color:var(--red);':''}">${boxes} κιβ.</div>
-          <div class="muted">${weight.toFixed(1)} κιλά</div>
+          <div style="font-weight:600;${low?'color:var(--red);':''}">${boxes} ${t("boxes_short")}</div>
+          <div class="muted">${weight.toFixed(1)} ${t("kg")}</div>
         </div>
       </div>
       ${expanded ? `
@@ -1635,7 +1842,7 @@ function articleCardHTML(a){
               <div class="row">
                 <div>
                   <div style="font-size:13px;">Lot ${esc(l.lot_code||"—")} ${bbdBadge(l.bbd)}</div>
-                  <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} κιβ. · ${Number(l.weight_kg).toFixed(1)} κιλά</div>
+                  <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
                 </div>
               </div>
             </div>
@@ -1654,48 +1861,48 @@ function trashRowHTML(kind, item, label, sub){
         <div class="muted">${esc(sub)}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn" data-restore="${kind}" data-restoreid="${esc(item.__id)}">↩ Επαναφορά</button>
-        <button class="btn btn-danger-outline" data-purge="${kind}" data-purgeid="${esc(item.__id)}">Οριστική διαγραφή</button>
+        <button class="btn" data-restore="${kind}" data-restoreid="${esc(item.__id)}">${t("restore")}</button>
+        <button class="btn btn-danger-outline" data-purge="${kind}" data-purgeid="${esc(item.__id)}">${t("purge")}</button>
       </div>
     </div>`;
 }
 function renderTrash(){
-  const t = state.trash;
-  const totalCount = t.orders.length + t.articles.length + t.stockUnits.length + t.customers.length;
+  const trashData = state.trash;
+  const totalCount = trashData.orders.length + trashData.articles.length + trashData.stockUnits.length + trashData.customers.length;
   return `
     <div class="stack">
-      <p class="muted" style="line-height:1.6;">Στοιχεία που έχεις διαγράψει. Μπορείς να τα επαναφέρεις, ή να τα διαγράψεις οριστικά (δεν γίνεται αναίρεση σε αυτό).</p>
-      ${totalCount===0 ? `<p class="center-note">Ο κάδος είναι άδειος.</p>` : ""}
+      <p class="muted" style="line-height:1.6;">${t("trash_desc")}</p>
+      ${totalCount===0 ? `<p class="center-note">${t("trash_empty")}</p>` : ""}
 
-      ${t.orders.length>0 ? `
+      ${trashData.orders.length>0 ? `
         <div>
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Παραγγελίες (${t.orders.length})</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${t("trash_orders")} (${trashData.orders.length})</p>
           <div class="stack" style="gap:6px;">
-            ${t.orders.map(o=>trashRowHTML("orders", {...o, __id:o.id}, `${o.order_number||o.id} — ${custName(o.customer_id)}`, `${o.date} · ${orderTotalBoxes(o)} κιβ. · ${formatEUR(orderTotal(o))}`)).join("")}
+            ${trashData.orders.map(o=>trashRowHTML("orders", {...o, __id:o.id}, `${o.order_number||o.id} — ${custName(o.customer_id)}`, `${o.date} · ${orderTotalBoxes(o)} ${t("boxes_short")} · ${formatEUR(orderTotal(o))}`)).join("")}
           </div>
         </div>` : ""}
 
-      ${t.customers.length>0 ? `
+      ${trashData.customers.length>0 ? `
         <div>
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Πελάτες (${t.customers.length})</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${t("trash_customers")} (${trashData.customers.length})</p>
           <div class="stack" style="gap:6px;">
-            ${t.customers.map(c=>trashRowHTML("customers", {...c, __id:c.id}, c.name, [c.code,c.city].filter(Boolean).join(" · ")||"—")).join("")}
+            ${trashData.customers.map(c=>trashRowHTML("customers", {...c, __id:c.id}, c.name, [c.code,c.city].filter(Boolean).join(" · ")||"—")).join("")}
           </div>
         </div>` : ""}
 
-      ${t.articles.length>0 ? `
+      ${trashData.articles.length>0 ? `
         <div>
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Είδη (${t.articles.length})</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${t("trash_articles")} (${trashData.articles.length})</p>
           <div class="stack" style="gap:6px;">
-            ${t.articles.map(a=>trashRowHTML("articles", {...a, __id:a.code}, a.name, a.code)).join("")}
+            ${trashData.articles.map(a=>trashRowHTML("articles", {...a, __id:a.code}, a.name, a.code)).join("")}
           </div>
         </div>` : ""}
 
-      ${t.stockUnits.length>0 ? `
+      ${trashData.stockUnits.length>0 ? `
         <div>
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Παρτίδες (${t.stockUnits.length})</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${t("trash_lots")} (${trashData.stockUnits.length})</p>
           <div class="stack" style="gap:6px;">
-            ${t.stockUnits.map(l=>trashRowHTML("stock_units", {...l, __id:l.sscc}, `${l.article_code} — Lot ${l.lot_code||"—"}`, `${l.volume_boxes} κιβ. · ${Number(l.weight_kg).toFixed(1)} κιλά`)).join("")}
+            ${trashData.stockUnits.map(l=>trashRowHTML("stock_units", {...l, __id:l.sscc}, `${l.article_code} — Lot ${l.lot_code||"—"}`, `${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}`)).join("")}
           </div>
         </div>` : ""}
     </div>
@@ -1710,11 +1917,11 @@ function renderStock(){
     .sort((a,b)=>a.bbd.localeCompare(b.bbd));
 
   const viewOptions = [
-    ["product","Ανά προϊόν"],
-    ["code","Ανά κωδικό"],
-    ["category","Ανά κατηγορία"],
-    ["expiry","Ανά ημ. λήξης"],
-    ["month","Λήγουν τις επόμενες 30 ημέρες"],
+    ["product",t("view_product")],
+    ["code",t("view_code")],
+    ["category",t("view_category")],
+    ["expiry",t("view_expiry")],
+    ["month",t("view_month")],
   ];
 
   const subtotalOf = (arts) => arts.reduce((acc,a)=>{
@@ -1740,16 +1947,16 @@ function renderStock(){
       .filter(a=>!q || a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
       .sort((a,b)=> state.stockView==="product" ? a.name.localeCompare(b.name,'el') : naturalCodeSort(a.code,b.code));
     filterBarHTML = `
-      <input id="stockFilterText" placeholder="Αναζήτηση για να βρεις κωδικούς..." value="${esc(state.stockFilterText)}" />
+      <input id="stockFilterText" placeholder="${t("filter_code_placeholder")}" value="${esc(state.stockFilterText)}" />
       <div class="row" style="margin:8px 0 6px;">
-        <span class="muted" style="font-size:11px;">${state.stockFilterCodes.size>0 ? `${state.stockFilterCodes.size} επιλεγμένα είδη` : "Κανένα επιλεγμένο — δείχνει όλα"}</span>
+        <span class="muted" style="font-size:11px;">${state.stockFilterCodes.size>0 ? `${state.stockFilterCodes.size} ${t("selected_items")}` : t("none_selected")}</span>
         <div style="display:flex;gap:10px;">
-          ${chipCandidates.length>0?`<button class="btn link" id="selectAllCodeChipsBtn" style="padding:0;">Επιλογή όλων</button>`:""}
-          ${state.stockFilterCodes.size>0 ? `<button class="btn link" id="clearCodeFilterBtn" style="padding:0;">Καθαρισμός</button>` : ""}
+          ${chipCandidates.length>0?`<button class="btn link" id="selectAllCodeChipsBtn" style="padding:0;">${t("select_all")}</button>`:""}
+          ${state.stockFilterCodes.size>0 ? `<button class="btn link" id="clearCodeFilterBtn" style="padding:0;">${t("clear")}</button>` : ""}
         </div>
       </div>
       <div class="chipwrap">
-        ${chipCandidates.length===0 ? `<span class="muted2" style="font-size:12px;">Κανένα αποτέλεσμα.</span>` :
+        ${chipCandidates.length===0 ? `<span class="muted2" style="font-size:12px;">${t("no_results")}</span>` :
           chipCandidates.map(a=>`<button type="button" class="chip ${state.stockFilterCodes.has(a.code)?'active':''}" data-codechip="${esc(a.code)}">${esc(a.code)} · ${esc(a.name)}</button>`).join("")}
       </div>`;
     let sorted = state.stockFilterCodes.size>0
@@ -1760,7 +1967,7 @@ function renderStock(){
       : sorted.sort((a,b)=>naturalCodeSort(a.code,b.code));
     visibleCodes = sorted.map(a=>a.code);
     sub = subtotalOf(sorted);
-    listHTML = sorted.length===0 ? `<p class="center-note">Κανένα αποτέλεσμα.</p>` : sorted.map(articleCardHTML).join("");
+    listHTML = sorted.length===0 ? `<p class="center-note">${t("no_results")}</p>` : sorted.map(articleCardHTML).join("");
   }
   else if (state.stockView === "category"){
     const allGroups = {};
@@ -1775,17 +1982,17 @@ function renderStock(){
     filterBarHTML = `
       <div class="chipwrap">
         ${allKeysOrdered.map(key=>{
-          const [t,c] = key.split("|");
-          return `<button type="button" class="chip ${state.stockFilterCategories.has(key)?'active':''}" data-catchip="${key}">${t} · ${c}</button>`;
+          const [tp,c] = key.split("|");
+          return `<button type="button" class="chip ${state.stockFilterCategories.has(key)?'active':''}" data-catchip="${key}">${tp} · ${c}</button>`;
         }).join("")}
       </div>
-      ${state.stockFilterCategories.size>0 ? `<button class="btn link" id="clearCategoryFilterBtn" style="padding:0;margin-top:6px;">Καθαρισμός επιλογής</button>` : ""}
+      ${state.stockFilterCategories.size>0 ? `<button class="btn link" id="clearCategoryFilterBtn" style="padding:0;margin-top:6px;">${t("clear")}</button>` : ""}
     `;
     const activeKeys = state.stockFilterCategories.size>0 ? allKeysOrdered.filter(k=>state.stockFilterCategories.has(k)) : allKeysOrdered;
     const groups = {}; activeKeys.forEach(k=>groups[k]=allGroups[k]||[]);
     visibleCodes = Object.values(groups).flat().map(a=>a.code);
     sub = subtotalOf(Object.values(groups).flat());
-    listHTML = visibleCodes.length===0 ? `<p class="center-note">Δεν υπάρχουν είδη σε αυτές τις κατηγορίες.</p>` : activeKeys.map(key=>{
+    listHTML = visibleCodes.length===0 ? `<p class="center-note">${t("no_items_category")}</p>` : activeKeys.map(key=>{
       const [temp, cut] = key.split("|");
       const arts = (groups[key]||[]).sort((a,b)=>a.name.localeCompare(b.name,'el'));
       if (arts.length===0) return "";
@@ -1796,7 +2003,7 @@ function renderStock(){
         <div style="margin-bottom:14px;">
           <div class="row" style="margin-bottom:6px;">
             <span class="muted" style="text-transform:uppercase;letter-spacing:0.5px;"><span class="badge ${tempCls}">${temp}</span> <span class="badge">${cut}</span></span>
-            <span class="muted2" style="font-size:11px;">${groupBoxes} κιβ. · ${groupWeight.toFixed(1)} κιλά</span>
+            <span class="muted2" style="font-size:11px;">${groupBoxes} ${t("boxes_short")} · ${groupWeight.toFixed(1)} ${t("kg")}</span>
           </div>
           <div class="stack" style="gap:6px;">
             ${arts.map(articleCardHTML).join("")}
@@ -1807,15 +2014,15 @@ function renderStock(){
   else if (state.stockView === "expiry"){
     filterBarHTML = `
       <div class="row" style="gap:8px;flex-wrap:wrap;">
-        <div><label>Από</label><input type="date" id="stockFilterFrom" value="${state.stockFilterFrom||""}" style="width:auto;" /></div>
-        <div><label>Έως</label><input type="date" id="stockFilterTo" value="${state.stockFilterTo||""}" style="width:auto;" /></div>
+        <div><label>${t("from")}</label><input type="date" id="stockFilterFrom" value="${state.stockFilterFrom||""}" style="width:auto;" /></div>
+        <div><label>${t("to")}</label><input type="date" id="stockFilterTo" value="${state.stockFilterTo||""}" style="width:auto;" /></div>
       </div>`;
     let lotsWithStock = state.stockUnits.filter(u=>(u.volume_boxes>0||u.weight_kg>0));
     if (state.stockFilterFrom) lotsWithStock = lotsWithStock.filter(u=>u.bbd && u.bbd>=state.stockFilterFrom);
     if (state.stockFilterTo) lotsWithStock = lotsWithStock.filter(u=>u.bbd && u.bbd<=state.stockFilterTo);
     lotsWithStock = lotsWithStock.sort((a,b)=>(a.bbd||"9999-99-99").localeCompare(b.bbd||"9999-99-99"));
     sub = subtotalOfLots(lotsWithStock);
-    listHTML = lotsWithStock.length===0 ? `<p class="center-note">Δεν υπάρχει διαθέσιμο απόθεμα.</p>` : lotsWithStock.map(l=>{
+    listHTML = lotsWithStock.length===0 ? `<p class="center-note">${t("no_stock_available")}</p>` : lotsWithStock.map(l=>{
       const a = state.articles.find(x=>x.code===l.article_code);
       const days = l.bbd ? daysUntil(l.bbd) : null;
       const cls = days===null ? "" : days<0 ? "expired" : days<=EXPIRY_WARNING_DAYS ? "expiring" : "";
@@ -1823,7 +2030,7 @@ function renderStock(){
         <div class="card ${cls} row">
           <div>
             <div style="font-size:13px;">${esc(a?a.name:l.article_code)} <span class="muted2">${esc(l.article_code)}</span></div>
-            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} κιβ. · ${Number(l.weight_kg).toFixed(1)} κιλά</div>
+            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
           </div>
           ${bbdBadge(l.bbd)}
         </div>`;
@@ -1834,15 +2041,15 @@ function renderStock(){
     const defaultTo = new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
     filterBarHTML = `
       <div class="row" style="gap:8px;flex-wrap:wrap;">
-        <div><label>Από</label><input type="date" id="stockFilterFrom" value="${state.stockFilterFrom||defaultFrom}" style="width:auto;" /></div>
-        <div><label>Έως</label><input type="date" id="stockFilterTo" value="${state.stockFilterTo||defaultTo}" style="width:auto;" /></div>
+        <div><label>${t("from")}</label><input type="date" id="stockFilterFrom" value="${state.stockFilterFrom||defaultFrom}" style="width:auto;" /></div>
+        <div><label>${t("to")}</label><input type="date" id="stockFilterTo" value="${state.stockFilterTo||defaultTo}" style="width:auto;" /></div>
       </div>`;
     const fromDate = state.stockFilterFrom || defaultFrom;
     const toDate = state.stockFilterTo || defaultTo;
     const lotsThisMonth = state.stockUnits.filter(u=>u.bbd && u.bbd>=fromDate && u.bbd<=toDate && (u.volume_boxes>0||u.weight_kg>0))
       .sort((a,b)=>a.bbd.localeCompare(b.bbd));
     sub = subtotalOfLots(lotsThisMonth);
-    listHTML = lotsThisMonth.length===0 ? `<p class="center-note">Καμία παρτίδα δεν λήγει σε αυτό το διάστημα.</p>` : lotsThisMonth.map(l=>{
+    listHTML = lotsThisMonth.length===0 ? `<p class="center-note">${t("no_lots_period")}</p>` : lotsThisMonth.map(l=>{
       const a = state.articles.find(x=>x.code===l.article_code);
       const days = daysUntil(l.bbd);
       const cls = days<0 ? "expired" : days<=EXPIRY_WARNING_DAYS ? "expiring" : "";
@@ -1850,7 +2057,7 @@ function renderStock(){
         <div class="card ${cls} row">
           <div>
             <div style="font-size:13px;">${esc(a?a.name:l.article_code)} <span class="muted2">${esc(l.article_code)}</span></div>
-            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} κιβ. · ${Number(l.weight_kg).toFixed(1)} κιλά</div>
+            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
           </div>
           ${bbdBadge(l.bbd)}
         </div>`;
@@ -1862,18 +2069,18 @@ function renderStock(){
   return `
     <div class="stack">
       <div class="row" style="justify-content:flex-end;gap:6px;">
-        <button class="btn" id="exportStockBtn">⇩ CSV</button>
-        <button class="btn" id="exportStockPdfBtn">⇩ PDF</button>
+        <button class="btn" id="exportStockBtn">${t("export_csv")}</button>
+        <button class="btn" id="exportStockPdfBtn">${t("export_pdf")}</button>
       </div>
       <div class="grid2">
-        <div class="stat"><div class="muted">Σύνολο κιβωτίων</div><div class="v">${totalBoxes}</div></div>
-        <div class="stat"><div class="muted">Σύνολο κιλών</div><div class="v">${totalWeight.toFixed(1)}</div></div>
+        <div class="stat"><div class="muted">${t("stock_total_boxes")}</div><div class="v">${totalBoxes}</div></div>
+        <div class="stat"><div class="muted">${t("stock_total_kg")}</div><div class="v">${totalWeight.toFixed(1)}</div></div>
       </div>
-      <div class="stat accent-amber"><div class="muted">Αξία αποθέματος</div><div class="v">${formatEUR(totalValue)}</div></div>
+      <div class="stat accent-amber"><div class="muted">${t("stock_value")}</div><div class="v">${formatEUR(totalValue)}</div></div>
 
       ${expiring.length>0 ? `
         <div>
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">⚠ Λήγουν σύντομα (εντός ${EXPIRY_WARNING_DAYS} ημερών) ή έληξαν</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${t("stock_expiring_header",{n:EXPIRY_WARNING_DAYS})}</p>
           <div class="stack" style="gap:6px;">
             ${expiring.map(u=>{
               const a = state.articles.find(x=>x.code===u.article_code);
@@ -1881,7 +2088,7 @@ function renderStock(){
               return `<div class="card ${cls} row">
                 <div>
                   <div style="font-size:13px;">${esc(a?a.name:u.article_code)} — lot ${esc(u.lot_code||"—")}</div>
-                  <div class="muted">${u.volume_boxes} κιβ. · ${Number(u.weight_kg).toFixed(1)} κιλά</div>
+                  <div class="muted">${u.volume_boxes} ${t("boxes_short")} · ${Number(u.weight_kg).toFixed(1)} ${t("kg")}</div>
                 </div>
                 ${bbdBadge(u.bbd)}
               </div>`;
@@ -1891,11 +2098,11 @@ function renderStock(){
 
       <div>
         <div class="row" style="margin-bottom:8px;">
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">Απόθεμα</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">${t("stock_section")}</p>
           ${showExpandControls ? `
             <div style="display:flex;gap:6px;">
-              <button class="btn link" id="expandAllStockBtn" data-codes="${visibleCodes.join(',')}">Expand all</button>
-              <button class="btn link" id="collapseAllStockBtn">Collapse all</button>
+              <button class="btn link" id="expandAllStockBtn" data-codes="${visibleCodes.join(',')}">${t("expand_all")}</button>
+              <button class="btn link" id="collapseAllStockBtn">${t("collapse_all")}</button>
             </div>
           ` : ""}
         </div>
@@ -1904,8 +2111,8 @@ function renderStock(){
         </div>
         ${filterBarHTML ? `<div style="margin-bottom:10px;">${filterBarHTML}</div>` : ""}
         <div class="grid2" style="margin-bottom:10px;">
-          <div class="stat"><div class="muted">Υποσύνολο (κιβώτια / κιλά)</div><div class="v" style="font-size:18px;">${sub.boxes} · ${sub.weight.toFixed(1)}</div></div>
-          <div class="stat accent-amber"><div class="muted">Υποσύνολο κόστους</div><div class="v" style="font-size:18px;">${formatEUR(sub.value)}</div></div>
+          <div class="stat"><div class="muted">${t("subtotal_boxes_kg")}</div><div class="v" style="font-size:18px;">${sub.boxes} · ${sub.weight.toFixed(1)}</div></div>
+          <div class="stat accent-amber"><div class="muted">${t("subtotal_cost")}</div><div class="v" style="font-size:18px;">${formatEUR(sub.value)}</div></div>
         </div>
         <div class="stack" style="gap:6px;">
           ${listHTML}
@@ -1944,16 +2151,16 @@ function renderDashboard(){
   return `
     <div class="stack">
       <div class="grid2">
-        <div class="stat accent-amber"><div class="muted">Παραγγελίες σήμερα</div><div class="v">${ordersToday.length}</div></div>
-        <div class="stat"><div class="muted">Παραγγελίες (7 ημ.)</div><div class="v">${orders7d.length}</div></div>
-        <div class="stat accent-amber"><div class="muted">Έσοδα μήνα</div><div class="v">${formatEUR(revenueMonth, 0)}</div></div>
-        <div class="stat"><div class="muted">Ενεργοί πελάτες (μήνα)</div><div class="v">${activeCustomersMonth}</div></div>
-        <div class="stat ${lowStockCount>0?'accent-red':''}"><div class="muted">Χαμηλό απόθεμα</div><div class="v">${lowStockCount}</div></div>
-        <div class="stat ${expiringCount>0?'accent-frost':''}"><div class="muted">Λήγουν σύντομα</div><div class="v">${expiringCount}</div></div>
+        <div class="stat accent-amber"><div class="muted">${t("dash_today")}</div><div class="v">${ordersToday.length}</div></div>
+        <div class="stat"><div class="muted">${t("dash_7d")}</div><div class="v">${orders7d.length}</div></div>
+        <div class="stat accent-amber"><div class="muted">${t("dash_month_rev")}</div><div class="v">${formatEUR(revenueMonth, 0)}</div></div>
+        <div class="stat"><div class="muted">${t("dash_active_customers")}</div><div class="v">${activeCustomersMonth}</div></div>
+        <div class="stat ${lowStockCount>0?'accent-red':''}"><div class="muted">${t("dash_low_stock")}</div><div class="v">${lowStockCount}</div></div>
+        <div class="stat ${expiringCount>0?'accent-frost':''}"><div class="muted">${t("dash_expiring")}</div><div class="v">${expiringCount}</div></div>
       </div>
 
       <div>
-        <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Παραγγελίες τελευταίες 14 ημέρες</p>
+        <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">${t("dash_last14")}</p>
         <div class="card">
           <div class="stack" style="gap:5px;">
             ${days.map(d=>`
@@ -1971,14 +2178,14 @@ function renderDashboard(){
 
       <div>
         <div class="row" style="margin-bottom:8px;">
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">Ποσότητες ανά πελάτη</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">${t("dash_per_customer")}</p>
           <div style="display:flex;gap:6px;">
-            <button class="btn" id="exportCustomerStatsCsvBtn">⇩ CSV</button>
-            <button class="btn" id="exportCustomerStatsPdfBtn">⇩ PDF</button>
+            <button class="btn" id="exportCustomerStatsCsvBtn">${t("export_csv")}</button>
+            <button class="btn" id="exportCustomerStatsPdfBtn">${t("export_pdf")}</button>
           </div>
         </div>
         <div class="stack" style="gap:6px;">
-          ${customerRows.length===0?`<p class="center-note">Δεν υπάρχουν παραγγελίες ακόμα.</p>`:""}
+          ${customerRows.length===0?`<p class="center-note">${t("dash_no_orders")}</p>`:""}
           ${customerRows.map(c=>{
             const expanded = state.expandedDashCustomers.has(c.id);
             const articleBreakdown = Object.values(c.byArticle).sort((x,y)=>y.boxes-x.boxes);
@@ -1987,7 +2194,7 @@ function renderDashboard(){
               <div class="row" style="cursor:pointer;" data-toggledashcust="${c.id}">
                 <div>
                   <div style="font-size:13px;">${esc(c.name)} <span class="muted2">${expanded?"▲":"▼"}</span></div>
-                  <div class="muted">${c.orders} παραγγελ. · ${c.boxes} κιβ. · ${c.weight.toFixed(1)} κιλά</div>
+                  <div class="muted">${c.orders} ${t("dash_orders_count")} · ${c.boxes} ${t("boxes_short")} · ${c.weight.toFixed(1)} ${t("kg")}</div>
                 </div>
                 ${c.value>0?`<span style="font-weight:600;color:var(--brand-bright);font-family:var(--font-display);">${formatEUR(c.value)}</span>`:""}
               </div>
@@ -1997,7 +2204,7 @@ function renderDashboard(){
                     ${articleBreakdown.map(a=>`
                       <div class="row" style="font-size:12px;">
                         <span class="muted">${esc(a.name)}</span>
-                        <span class="muted2">${a.boxes} κιβ. · ${a.weight.toFixed(1)} κιλά${a.value>0?` · ${formatEUR(a.value)}`:""}</span>
+                        <span class="muted2">${a.boxes} ${t("boxes_short")} · ${a.weight.toFixed(1)} ${t("kg")}${a.value>0?` · ${formatEUR(a.value)}`:""}</span>
                       </div>
                     `).join("")}
                   </div>
@@ -2010,19 +2217,19 @@ function renderDashboard(){
 
       <div>
         <div class="row" style="margin-bottom:8px;">
-          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">Ποσότητες ανά κωδικό είδους</p>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">${t("dash_per_article")}</p>
           <div style="display:flex;gap:6px;">
-            <button class="btn" id="exportArticleStatsCsvBtn">⇩ CSV</button>
-            <button class="btn" id="exportArticleStatsPdfBtn">⇩ PDF</button>
+            <button class="btn" id="exportArticleStatsCsvBtn">${t("export_csv")}</button>
+            <button class="btn" id="exportArticleStatsPdfBtn">${t("export_pdf")}</button>
           </div>
         </div>
         <div class="stack" style="gap:6px;">
-          ${articleRows.length===0?`<p class="center-note">Δεν υπάρχουν παραγγελίες ακόμα.</p>`:""}
+          ${articleRows.length===0?`<p class="center-note">${t("dash_no_orders")}</p>`:""}
           ${articleRows.map(a=>`
             <div class="card row">
               <div>
                 <div style="font-size:13px;">${esc(a.name)}</div>
-                <div class="muted">${a.boxes} κιβ. · ${a.weight.toFixed(1)} κιλά</div>
+                <div class="muted">${a.boxes} ${t("boxes_short")} · ${a.weight.toFixed(1)} ${t("kg")}</div>
               </div>
               ${a.value>0?`<span style="font-weight:600;color:var(--brand-bright);font-family:var(--font-display);">${formatEUR(a.value)}</span>`:""}
             </div>
@@ -2035,6 +2242,16 @@ function renderDashboard(){
 
 /* ---------------- events ---------------- */
 function bindEvents(){
+  const toggleLang = () => {
+    state.lang = state.lang === "en" ? "el" : "en";
+    try { localStorage.setItem("taksis_lang", state.lang); } catch(e){}
+    render();
+  };
+  const langToggleBtn = document.getElementById("langToggleBtn");
+  if (langToggleBtn) langToggleBtn.onclick = toggleLang;
+  const langToggleBtnMobile = document.getElementById("langToggleBtnMobile");
+  if (langToggleBtnMobile) langToggleBtnMobile.onclick = toggleLang;
+
   root.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     state.tab=b.dataset.tab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
     state.showImportStock=false; state.showImportC=false; state.addingLotFor=null; state.selectedOrders.clear();
@@ -2173,7 +2390,7 @@ function bindEvents(){
     if (error) return showToast(`Σφάλμα: ${error.message}`);
     state.addingLotFor = null;
     await loadAll();
-    showToast("Η παρτίδα αποθηκεύτηκε");
+    showToast(t("toast_lot_saved"));
   };
 
   const cancelArticleBtn = document.getElementById("cancelArticleBtn");
@@ -2225,7 +2442,7 @@ function bindEvents(){
     try {
       document.getElementById("importText").value = await readFileSmart(file);
     } catch (e) {
-      showToast("Δεν ήταν δυνατή η ανάγνωση του αρχείου");
+      showToast(t("toast_file_read_error"));
     }
   };
   const doImportStockBtn = document.getElementById("doImportStockBtn");
@@ -2238,7 +2455,7 @@ function bindEvents(){
     const {error} = await sb.from("stock_units").delete().neq("sscc","");
     if (error) return showToast(`Σφάλμα: ${error.message}`);
     await loadAll();
-    showToast("Το stock καθαρίστηκε");
+    showToast(t("toast_stock_cleared"));
   };
   const doImportCBtn = document.getElementById("doImportCBtn");
   if (doImportCBtn) doImportCBtn.onclick = doImportCustomers;
@@ -2366,7 +2583,7 @@ function bindEvents(){
     const list = ordersForExport();
     const label = state.historyView==='day' ? dayRangeLabel() : (custName(state.historyCustomer)||"pelatis").replace(/[^\p{L}\p{N}]+/gu,"-");
     const titleLabel = state.historyView==='day' ? (state.historyRange?`${formatDateEL(state.historyRange.from)} – ${formatDateEL(state.historyRange.to)}`:formatDateEL(state.historyDate)) : custName(state.historyCustomer);
-    exportOrdersPDF(list, `taksis_order-paraggelies-${label}.pdf`, `Παραγγελίες — ${titleLabel}`);
+    exportOrdersPDF(list, `taksis_order-paraggelies-${label}.pdf`, `${t("nav_history")} — ${titleLabel}`);
   };
   const dailyReportCsvBtn = document.getElementById("dailyReportCsvBtn");
   if (dailyReportCsvBtn) dailyReportCsvBtn.onclick = () => exportDailyReportCSV(state.historyDate);
@@ -2391,7 +2608,7 @@ function bindEvents(){
     if (!cfg) return;
     const {error} = await sb.from(cfg.table).update({deleted_at:null}).eq(cfg.idCol, b.dataset.restoreid);
     if (error) return showToast(`Σφάλμα επαναφοράς: ${error.message}`);
-    showToast("Επαναφέρθηκε");
+    showToast(t("toast_restored"));
     await Promise.all([loadAll(), loadTrash()]);
   });
   root.querySelectorAll("[data-purge]").forEach(b=>b.onclick=async()=>{
@@ -2400,7 +2617,7 @@ function bindEvents(){
     if (!cfg) return;
     const {error} = await sb.from(cfg.table).delete().eq(cfg.idCol, b.dataset.purgeid);
     if (error) return showToast(`Σφάλμα διαγραφής: ${error.message}`);
-    showToast("Διαγράφηκε οριστικά");
+    showToast(t("toast_purged"));
     await loadTrash();
   });
 }
@@ -2425,7 +2642,7 @@ function collectArticleForm(){
 async function saveArticle(){
   collectArticleForm();
   const f = state.editingArticle;
-  if (!f.code || !f.name) return showToast("Κωδικός και όνομα υποχρεωτικά");
+  if (!f.code || !f.name) return showToast(t("toast_code_name_required"));
   const clean = {code:f.code, name:f.name, price:toNumber(f.price), price_per_kg:toNumber(f.price_per_kg), custom:f.custom||{}};
   if (f.isNew){
     const {error} = await sb.from("articles").insert(clean);
@@ -2436,7 +2653,7 @@ async function saveArticle(){
   }
   state.editingArticle = null;
   await loadAll();
-  showToast("Αποθηκεύτηκε");
+  showToast(t("toast_saved"));
 }
 async function saveCustomer(){
   const c = state.editingCustomer;
@@ -2464,21 +2681,21 @@ async function saveCustomer(){
     delivery_city: sameAsBilling ? "" : document.getElementById("c_delivery_city").value.trim(),
     delivery_country: sameAsBilling ? "" : document.getElementById("c_delivery_country").value.trim(),
   };
-  if (!clean.name) return showToast("Το όνομα είναι υποχρεωτικό");
+  if (!clean.name) return showToast(t("toast_name_required"));
   const {error} = c.isNew ? await sb.from("customers").insert(clean) : await sb.from("customers").update(clean).eq("id", c.id);
   if (error) return showToast(`Σφάλμα: ${error.message}`);
   state.editingCustomer = null;
   await loadAll();
-  showToast("Αποθηκεύτηκε");
+  showToast(t("toast_saved"));
 }
 
 async function doImportStock(){
   const raw = document.getElementById("importText").value;
   const {mappedHeaders, records} = parseStockTable(raw);
   console.log("Αντιστοίχιση στηλών:", document.getElementById("importText").value.split("\n")[0].split(/[,;\t]/).map((h,i)=>`${h.trim()} -> ${mappedHeaders[i]||"(αγνοήθηκε)"}`));
-  if (!mappedHeaders.includes("articlecode")) return showToast("Δεν βρέθηκε στήλη Article Code");
+  if (!mappedHeaders.includes("articlecode")) return showToast(t("toast_no_article_code_col"));
   const validRecords = records.filter(r=>r.articlecode);
-  if (validRecords.length===0) return showToast("Δεν βρέθηκαν έγκυρες γραμμές");
+  if (validRecords.length===0) return showToast(t("toast_no_valid_lines"));
   const zeroQty = validRecords.filter(r => toNumber(r.volume)===0 && toNumber(r.weight)===0).length;
 
   // upsert articles (code+name always; price_per_kg only if present in the file, to avoid overwriting manually-set values)
@@ -2529,9 +2746,9 @@ async function doImportStock(){
 async function doImportCustomers(){
   const raw = document.getElementById("importText").value;
   const {mappedHeaders, records} = parseCustomerTable(raw);
-  if (!mappedHeaders.includes("name")) return showToast("Δεν βρέθηκε στήλη Name");
+  if (!mappedHeaders.includes("name")) return showToast(t("toast_no_name_col"));
   const validRecords = records.filter(r=>r.name);
-  if (validRecords.length===0) return showToast("Δεν βρέθηκαν έγκυρες εγγραφές");
+  if (validRecords.length===0) return showToast(t("toast_no_valid_records"));
 
   let corruptedCount = 0;
   const corruptedCodes = [];
