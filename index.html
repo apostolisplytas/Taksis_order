@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.18.5/package/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0b0a09; --panel:#1a1817; --panel2:#211f1d; --border:#2a2724; --border2:#413c37;
@@ -686,6 +687,41 @@ function setupGreekFont(doc){
   doc.addFileToVFS("NotoSans-Bold.ttf", NOTOSANS_BOLD_B64);
   doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
   doc.setFont("NotoSans", "normal");
+}
+
+// Εξαγωγή μιας παραγγελίας στο ακριβές template της Logifrio (.xlsx)
+// Στήλες: ArticleCode, Description, Quantity, Temperature, OC, UOM, Element, Symbol, StockReference, WmsPrice
+function sanitizeForFilename(s){
+  return String(s||"")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"") // αφαίρεση τόνων
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+}
+function exportLogifrioXLSX(order){
+  if (!window.XLSX) return showToast("Η βιβλιοθήκη Excel δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  const c = state.customers.find(x=>x.id===order.customer_id);
+  const customerName = c ? c.name : "Customer";
+
+  const header = ["ArticleCode","Description","Quantity","Temperature","OC","UOM","Element","Symbol","StockReference","WmsPrice"];
+  const rows = order.items.map(i=>{
+    const codeNum = /^\d+$/.test(String(i.article_code)) ? Number(i.article_code) : i.article_code;
+    const cls = classifyArticle(i.article_code);
+    const temperature = cls.temp === "Fresh" ? "Fresh" : cls.temp === "Frozen" ? "Frozen" : "";
+    return [codeNum, i.article_name, i.qty, temperature, "", "Cartons", "", "", i.sscc||"", ""];
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Folha1");
+
+  // Ημερομηνία παράδοσης = ημερομηνία παραγγελίας + 2 ημέρες
+  const orderDate = new Date(order.date + "T00:00:00");
+  orderDate.setDate(orderDate.getDate() + 2);
+  const dd = String(orderDate.getDate()).padStart(2,"0");
+  const mm = String(orderDate.getMonth()+1).padStart(2,"0");
+
+  const filename = `Logifrio_New_order_${sanitizeForFilename(customerName)}_${dd}_${mm}.xlsx`;
+  XLSX.writeFile(wb, filename);
 }
 
 function exportDeliverySlipPDF(order){
@@ -1813,6 +1849,7 @@ function renderOrderCard(o, showDate){
           ${ORDER_STATUSES.map(s=>`<option value="${s.id}" ${(o.status||"")===s.id?'selected':''}>${t(s.key)}</option>`).join("")}
         </select>
         <button class="btn" data-deliveryslip="${o.id}" style="font-size:12px;padding:6px 10px;">${t("delivery_slip")}</button>
+        <button class="btn" data-logifrio="${o.id}" style="font-size:12px;padding:6px 10px;">⇩ Logifrio template</button>
       </div>
     </div>
   `;
@@ -2544,6 +2581,10 @@ function bindEvents(){
   root.querySelectorAll("[data-deliveryslip]").forEach(b=>b.onclick=()=>{
     const order = state.orders.find(o=>o.id===b.dataset.deliveryslip);
     if (order) exportDeliverySlipPDF(order);
+  });
+  root.querySelectorAll("[data-logifrio]").forEach(b=>b.onclick=()=>{
+    const order = state.orders.find(o=>o.id===b.dataset.logifrio);
+    if (order) exportLogifrioXLSX(order);
   });
   root.querySelectorAll("[data-ordercheck]").forEach(cb=>cb.onchange=()=>{
     const id = cb.dataset.ordercheck;
