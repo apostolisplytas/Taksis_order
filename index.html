@@ -446,6 +446,7 @@ let state = {
   lang: (function(){ try { return localStorage.getItem("taksis_lang") || "el"; } catch(e){ return "el"; } })(),
   articles: [], stockUnits: [], customers: [], orders: [],
   cart: {}, // sscc -> qty boxes
+  cartPrices: {}, // sscc -> custom price/kg (undefined = use article's average price)
   customerId: "", search: "", loaded: false,
   editingArticle: null, editingCustomer: null,
   showImportStock: false, showImportC: false,
@@ -1122,10 +1123,10 @@ function render(){
           <button class="stat-row" data-tab="history">
             <span class="dot brand"></span><span>${t("dash_today")}</span><strong>${stats.ordersToday}</strong>
           </button>
-          <button class="stat-row" data-tab="stock">
+          <button class="stat-row" data-tab="stock" data-stockpreset="lowstock">
             <span class="dot ${stats.lowStock>0?'red':''}"></span><span>${t("dash_low_stock")}</span><strong>${stats.lowStock}</strong>
           </button>
-          <button class="stat-row" data-tab="stock">
+          <button class="stat-row" data-tab="stock" data-stockpreset="expiring">
             <span class="dot ${stats.expiring>0?'amber':''}"></span><span>${t("dash_expiring")}</span><strong>${stats.expiring}</strong>
           </button>
         </div>
@@ -1222,7 +1223,8 @@ function renderOrders(){
     const a = state.articles.find(x=>x.code===su.article_code);
     const ratio = su.volume_boxes > 0 ? (su.weight_kg / su.volume_boxes) : 0;
     const weight = qty*ratio;
-    const value = (a?.price_per_kg||0)*weight;
+    const effectivePrice = state.cartPrices[sscc] !== undefined ? state.cartPrices[sscc] : (a?.price_per_kg||0);
+    const value = effectivePrice*weight;
     if (!cartByArticle[su.article_code]) cartByArticle[su.article_code] = {name:a?a.name:su.article_code, boxes:0, weight:0, value:0};
     cartByArticle[su.article_code].boxes += qty;
     cartByArticle[su.article_code].weight += weight;
@@ -1279,6 +1281,7 @@ function renderOrders(){
                 ${availLots.length===0?`<p class="muted" style="margin:8px 0 0;">${t("no_stock_available")}</p>`:""}
                 ${availLots.map(l=>{
                   const qty = state.cart[l.sscc] || 0;
+                  const priceVal = state.cartPrices[l.sscc] !== undefined ? state.cartPrices[l.sscc] : (a.price_per_kg ?? 0);
                   return `
                   <div class="lotrow">
                     <div class="row">
@@ -1292,6 +1295,12 @@ function renderOrders(){
                         <button class="qtybtn" data-lotqtyup="${l.sscc}" data-max="${l.volume_boxes}">+</button>
                       </div>
                     </div>
+                    ${qty>0 ? `
+                      <div class="row" style="margin-top:6px;">
+                        <label style="font-size:11px;color:var(--muted2);margin:0;">${t("price_per_kg")}</label>
+                        <input type="number" step="0.01" data-lotprice="${l.sscc}" value="${priceVal}" style="width:90px;padding:5px 8px;font-size:12px;" />
+                      </div>
+                    ` : ""}
                   </div>`;
                 }).join("")}
               </div>
@@ -1378,7 +1387,7 @@ async function submitOrder(){
     const a = state.articles.find(x=>x.code===su.article_code);
     const ratio = su.volume_boxes > 0 ? (su.weight_kg / su.volume_boxes) : 0;
     const weight = qty*ratio;
-    const pricePerKg = a?.price_per_kg||0;
+    const pricePerKg = state.cartPrices[sscc] !== undefined ? state.cartPrices[sscc] : (a?.price_per_kg||0);
     items.push({sscc, article_code: su.article_code, article_name: a?.name||su.article_code, lot_code: su.lot_code, bbd: su.bbd, qty, weight, price: a?.price||0, price_per_kg: pricePerKg, value: weight*pricePerKg});
   }
   if (items.length===0) return showToast(t("toast_add_products"));
@@ -1393,6 +1402,7 @@ async function submitOrder(){
     await sb.from("stock_units").update({volume_boxes:newBoxes, weight_kg:newWeight}).eq("sscc", it.sscc);
   }
   state.cart = {};
+  state.cartPrices = {};
   showToast(orderNo ? `Η παραγγελία ${orderNo} καταχωρήθηκε` : "Η παραγγελία καταχωρήθηκε");
   await loadAll();
 }
@@ -2292,6 +2302,17 @@ function bindEvents(){
   root.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     state.tab=b.dataset.tab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
     state.showImportStock=false; state.showImportC=false; state.addingLotFor=null; state.selectedOrders.clear();
+    const preset = b.dataset.stockpreset;
+    if (preset === "lowstock"){
+      state.stockView = "product";
+      state.stockFilterText = ""; state.stockFilterCategories = new Set();
+      state.stockFilterCodes = new Set(state.articles.filter(a=>articleTotals(a.code).boxes<=5).map(a=>a.code));
+      state.stockFilterFrom = ""; state.stockFilterTo = "";
+    } else if (preset === "expiring"){
+      state.stockView = "month";
+      state.stockFilterText = ""; state.stockFilterCodes = new Set(); state.stockFilterCategories = new Set();
+      state.stockFilterFrom = ""; state.stockFilterTo = "";
+    }
     render();
     if (state.tab === "trash") loadTrash();
   });
@@ -2374,11 +2395,21 @@ function bindEvents(){
     state.cart[s]=Math.min(max,(state.cart[s]||0)+1); render();
   });
   root.querySelectorAll("[data-lotqtydown]").forEach(b=>b.onclick=()=>{
-    const s=b.dataset.lotqtydown; state.cart[s]=Math.max(0,(state.cart[s]||0)-1); render();
+    const s=b.dataset.lotqtydown; state.cart[s]=Math.max(0,(state.cart[s]||0)-1);
+    if (state.cart[s]===0) delete state.cartPrices[s];
+    render();
   });
   root.querySelectorAll("[data-lotqtyinput]").forEach(inp=>inp.onchange=()=>{
     const s=inp.dataset.lotqtyinput, max=Number(inp.dataset.max)||Infinity;
-    state.cart[s]=Math.max(0,Math.min(max,Number(inp.value)||0)); render();
+    state.cart[s]=Math.max(0,Math.min(max,Number(inp.value)||0));
+    if (state.cart[s]===0) delete state.cartPrices[s];
+    render();
+  });
+  root.querySelectorAll("[data-lotprice]").forEach(inp=>inp.onchange=()=>{
+    const s = inp.dataset.lotprice;
+    const v = Number(inp.value);
+    state.cartPrices[s] = isNaN(v) ? 0 : v;
+    render();
   });
   const submitBtn = document.getElementById("submitOrderBtn");
   if (submitBtn) submitBtn.onclick = submitOrder;
