@@ -258,6 +258,8 @@ const I18N = {
     pdf_export_label: "Εξαγωγή", pdf_orders_label: "παραγγελίες", pdf_by_customer: "Ποσότητες ανά πελάτη",
     pdf_by_article: "Ποσότητες ανά κωδικό είδους", pdf_stock_title: "Απόθεμα",
     code_subtotal_label: "Σύνολο κωδικού", grand_total_label: "ΓΕΝΙΚΟ ΣΥΝΟΛΟ",
+    login_title: "Σύνδεση", login_email: "Email", login_password: "Κωδικός", login_button: "Σύνδεση",
+    login_error_generic: "Λάθος email ή κωδικός", logout: "Αποσύνδεση", logging_in: "Σύνδεση...",
   },
   en: {
     module_tag: "taksis_order", lang_switch: "EL",
@@ -347,6 +349,8 @@ const I18N = {
     pdf_export_label: "Exported", pdf_orders_label: "orders", pdf_by_customer: "Quantities by customer",
     pdf_by_article: "Quantities by item code", pdf_stock_title: "Stock",
     code_subtotal_label: "Item subtotal", grand_total_label: "GRAND TOTAL",
+    login_title: "Sign in", login_email: "Email", login_password: "Password", login_button: "Sign in",
+    login_error_generic: "Wrong email or password", logout: "Sign out", logging_in: "Signing in...",
   },
 };
 function t(key, vars){
@@ -446,6 +450,7 @@ function showToast(msg){
 let state = {
   tab: "orders",
   lang: (function(){ try { return localStorage.getItem("taksis_lang") || "el"; } catch(e){ return "el"; } })(),
+  session: null, authChecked: false, loginEmail: "", loginPassword: "", loginError: "",
   articles: [], stockUnits: [], customers: [], orders: [],
   cart: {}, // sscc -> qty boxes
   cartPrices: {}, // sscc -> custom price/kg (undefined = use article's average price)
@@ -462,6 +467,50 @@ let state = {
   viewingCustomerId: null,
   trash: {articles:[], stockUnits:[], customers:[], orders:[]},
 };
+
+function bindLoginEvents(){
+  const form = document.getElementById("loginForm");
+  if (form) form.onsubmit = async (e) => {
+    e.preventDefault();
+    const email = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
+    state.loginEmail = email;
+    state.loginError = "";
+    state.loggingIn = true;
+    render();
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    state.loggingIn = false;
+    if (error){
+      state.loginError = t("login_error_generic");
+      render();
+      return;
+    }
+    state.session = data.session;
+    state.loginPassword = "";
+    render();
+    await loadAll();
+  };
+}
+async function logout(){
+  await sb.auth.signOut();
+  state.session = null;
+  state.loaded = false;
+  state.articles = []; state.stockUnits = []; state.customers = []; state.orders = [];
+  render();
+}
+async function initAuth(){
+  const { data } = await sb.auth.getSession();
+  state.session = data.session;
+  state.authChecked = true;
+  render();
+  if (state.session) await loadAll();
+  sb.auth.onAuthStateChange((event, session) => {
+    const hadSession = !!state.session;
+    state.session = session;
+    if (session && !hadSession){ render(); loadAll(); }
+    else if (!session && hadSession){ state.loaded = false; render(); }
+  });
+}
 
 async function loadAll(){
   const [aRes, sRes, cRes, oRes] = await Promise.all([
@@ -1111,6 +1160,39 @@ function exportStockPDF(){
 }
 
 /* ---------------- render ---------------- */
+function brandBlockHTML(size){
+  const s = size || 34;
+  return `
+    <svg viewBox="0 0 120 120" width="${s}" height="${s}" xmlns="http://www.w3.org/2000/svg">
+      <defs><path id="hdricon" d="M 12,67 A 48,48 0 0,0 108,67"/></defs>
+      <circle cx="60" cy="60" r="60" fill="#085041"/>
+      <line x1="22" y1="40" x2="98" y2="40" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+      <line x1="24" y1="57" x2="80" y2="57" stroke="white" stroke-width="6.5" stroke-linecap="round"/>
+      <polyline points="70,47 83,57 70,67" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="22" y1="74" x2="98" y2="74" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+    </svg>
+    <img src="${WORDMARK_DATA_URI}" alt="taksis" class="wordmark" />`;
+}
+
+function renderLogin(){
+  return `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;">
+      <div class="card" style="max-width:360px;width:100%;border-color:var(--brand);padding:24px;">
+        <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:22px;">
+          ${brandBlockHTML(38)}
+        </div>
+        <p class="muted" style="text-transform:uppercase;letter-spacing:0.8px;margin:0 0 16px;text-align:center;">${t("login_title")}</p>
+        ${state.loginError ? `<div class="card" style="border-color:var(--red);margin-bottom:12px;padding:10px;"><p style="color:var(--red);font-size:13px;margin:0;">${esc(state.loginError)}</p></div>` : ""}
+        <form id="loginForm" class="stack" style="gap:10px;">
+          <input id="loginEmail" type="email" placeholder="${t("login_email")}" value="${esc(state.loginEmail)}" autocomplete="username" required />
+          <input id="loginPassword" type="password" placeholder="${t("login_password")}" autocomplete="current-password" required />
+          <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%;padding:12px;" ${state.loggingIn?'disabled':''}>${state.loggingIn?t("logging_in"):t("login_button")}</button>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
 function render(){
   if (!configured){
     root.innerHTML = `
@@ -1118,6 +1200,15 @@ function render(){
         <strong>Λείπει η σύνδεση με τη βάση δεδομένων.</strong><br/><br/>
         Άνοιξε το αρχείο index.html με έναν επεξεργαστή κειμένου και συμπλήρωσε τις μεταβλητές <code>SUPABASE_URL</code> και <code>SUPABASE_ANON_KEY</code> στην αρχή του &lt;script&gt; (χρησιμοποίησε τα ίδια στοιχεία που είχες ήδη), μετά ξανα-ανέβασέ το.
       </div>`;
+    return;
+  }
+  if (!state.authChecked){
+    root.innerHTML = `<div class="center-note">${t("loading")}</div>`;
+    return;
+  }
+  if (!state.session){
+    root.innerHTML = renderLogin();
+    bindLoginEvents();
     return;
   }
   if (!state.loaded){
@@ -1143,16 +1234,7 @@ function render(){
     customers: `<svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="8" r="4" fill="none"/><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7" fill="none"/></svg>`,
     trash: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"><line x1="4" y1="6" x2="20" y2="6"/><path d="M6 6l1 15h10l1-15"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/><line x1="9" y1="6" x2="9.5" y2="3" /><line x1="15" y1="6" x2="14.5" y2="3"/><line x1="9.5" y1="3" x2="14.5" y2="3"/></svg>`,
   };
-  const brandBlock = `
-    <svg viewBox="0 0 120 120" width="34" height="34" xmlns="http://www.w3.org/2000/svg">
-      <defs><path id="hdricon" d="M 12,67 A 48,48 0 0,0 108,67"/></defs>
-      <circle cx="60" cy="60" r="60" fill="#085041"/>
-      <line x1="22" y1="40" x2="98" y2="40" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
-      <line x1="24" y1="57" x2="80" y2="57" stroke="white" stroke-width="6.5" stroke-linecap="round"/>
-      <polyline points="70,47 83,57 70,67" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-      <line x1="22" y1="74" x2="98" y2="74" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
-    </svg>
-    <img src="${WORDMARK_DATA_URI}" alt="taksis" class="wordmark" />`;
+  const brandBlock = brandBlockHTML(34);
 
   root.innerHTML = `
     <div class="app-shell">
@@ -1177,6 +1259,7 @@ function render(){
             <span class="dot ${stats.expiring>0?'amber':''}"></span><span>${t("dash_expiring")}</span><strong>${stats.expiring}</strong>
           </button>
         </div>
+        <button class="btn" id="logoutBtn" style="font-size:12px;">${t("logout")}</button>
       </aside>
       <div class="main-col">
         <header>
@@ -1185,6 +1268,7 @@ function render(){
             <div class="brand">${brandBlock}</div>
             <div style="display:flex;align-items:center;gap:8px;">
               <button id="langToggleBtnMobile" class="btn" style="padding:5px 10px;font-size:11px;">${t("lang_switch")}</button>
+              <button id="logoutBtnMobile" class="btn" style="padding:5px 10px;font-size:11px;">${t("logout")}</button>
               <span class="tag">${t("module_tag")}</span>
             </div>
           </div>
@@ -2345,6 +2429,10 @@ function bindEvents(){
   if (langToggleBtn) langToggleBtn.onclick = toggleLang;
   const langToggleBtnMobile = document.getElementById("langToggleBtnMobile");
   if (langToggleBtnMobile) langToggleBtnMobile.onclick = toggleLang;
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) logoutBtn.onclick = logout;
+  const logoutBtnMobile = document.getElementById("logoutBtnMobile");
+  if (logoutBtnMobile) logoutBtnMobile.onclick = logout;
 
   root.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     state.tab=b.dataset.tab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
@@ -2899,7 +2987,7 @@ async function doImportCustomers(){
 }
 
 /* ---------------- init ---------------- */
-if (configured){ render(); loadAll(); } else { render(); }
+if (configured){ render(); initAuth(); } else { render(); }
 </script>
 </body>
 </html>
