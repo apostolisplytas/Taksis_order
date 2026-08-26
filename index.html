@@ -257,6 +257,7 @@ const I18N = {
     pdf_daily_report_title: "Ημερήσια Αναφορά Παραγγελιών", pdf_total_label: "Σύνολο",
     pdf_export_label: "Εξαγωγή", pdf_orders_label: "παραγγελίες", pdf_by_customer: "Ποσότητες ανά πελάτη",
     pdf_by_article: "Ποσότητες ανά κωδικό είδους", pdf_stock_title: "Απόθεμα",
+    code_subtotal_label: "Σύνολο κωδικού", grand_total_label: "ΓΕΝΙΚΟ ΣΥΝΟΛΟ",
   },
   en: {
     module_tag: "taksis_order", lang_switch: "EL",
@@ -345,6 +346,7 @@ const I18N = {
     pdf_daily_report_title: "Daily Order Report", pdf_total_label: "Total",
     pdf_export_label: "Exported", pdf_orders_label: "orders", pdf_by_customer: "Quantities by customer",
     pdf_by_article: "Quantities by item code", pdf_stock_title: "Stock",
+    code_subtotal_label: "Item subtotal", grand_total_label: "GRAND TOTAL",
   },
 };
 function t(key, vars){
@@ -667,15 +669,41 @@ function dayViewOrders(){
 function orderTotalWeight(o){ return o.items.reduce((s,i)=>s+(i.weight||0),0); }
 function orderTotalBoxes(o){ return o.items.reduce((s,i)=>s+(i.qty||0),0); }
 
-function exportOrdersCSV(ordersList, filename){
-  const headers = [t("h_order_no"),t("h_status"),t("h_date"),t("h_customer"),t("h_article_code"),t("h_article"),"SSCC","Lot","BBD",t("h_boxes_h"),t("h_kg_h"),t("h_price_kg"),t("h_line_total")];
-  const rows = [];
+// Ομαδοποιεί όλες τις γραμμές παραγγελιών ανά κωδικό είδους, διατηρώντας τη σειρά πρώτης εμφάνισης.
+// Χρησιμοποιείται και από το CSV και από το PDF, ώστε να ταιριάζουν απόλυτα.
+function groupOrderLinesByCode(ordersList){
+  const groups = {};
+  const codeOrder = [];
   ordersList.forEach(o=>{
     const cname = custName(o.customer_id);
     o.items.forEach(i=>{
-      rows.push([o.order_number?`${o.order_number}`:"", statusLabel(o.status), o.date, cname, i.article_code, i.article_name, i.sscc||"", i.lot_code||"", i.bbd?formatDateEL(i.bbd):"", i.qty, Number(i.weight||0).toFixed(2), Number(i.price_per_kg ?? 0).toFixed(2), orderLineValue(i).toFixed(2)]);
+      const code = i.article_code;
+      if (!groups[code]){ groups[code] = {code, name:i.article_name, lines:[], boxes:0, weight:0, value:0}; codeOrder.push(code); }
+      const val = orderLineValue(i);
+      groups[code].lines.push({
+        orderNo: o.order_number || "", status: statusLabel(o.status), date: o.date, customer: cname,
+        lotCode: i.lot_code||"", bbd: i.bbd?formatDateEL(i.bbd):"",
+        boxes: i.qty, weight: Number(i.weight||0), pricePerKg: Number(i.price_per_kg ?? 0), value: val,
+      });
+      groups[code].boxes += i.qty; groups[code].weight += Number(i.weight||0); groups[code].value += val;
     });
   });
+  const groupList = codeOrder.map(c=>groups[c]);
+  const grand = groupList.reduce((acc,g)=>{ acc.boxes+=g.boxes; acc.weight+=g.weight; acc.value+=g.value; return acc; }, {boxes:0, weight:0, value:0});
+  return { groups: groupList, grand };
+}
+
+function exportOrdersCSV(ordersList, filename){
+  const headers = [t("h_order_no"),t("h_status"),t("h_date"),t("h_customer"),t("h_article_code"),t("h_article"),"Lot","BBD",t("h_boxes_h"),t("h_kg_h"),t("h_price_kg"),t("h_line_total")];
+  const {groups, grand} = groupOrderLinesByCode(ordersList);
+  const rows = [];
+  groups.forEach(g=>{
+    g.lines.forEach(l=>{
+      rows.push([l.orderNo, l.status, l.date, l.customer, g.code, g.name, l.lotCode, l.bbd, l.boxes, l.weight.toFixed(2), l.pricePerKg.toFixed(2), l.value.toFixed(2)]);
+    });
+    rows.push(["", "", "", "", g.code, `${t("code_subtotal_label")} ${g.code}`, "", "", g.boxes, g.weight.toFixed(2), "", g.value.toFixed(2)]);
+  });
+  if (groups.length>0) rows.push(["", "", "", "", "", t("grand_total_label"), "", "", grand.boxes, grand.weight.toFixed(2), "", grand.value.toFixed(2)]);
   if (rows.length===0) return showToast(t("toast_no_data_export"));
   downloadCSV(filename, headers, rows);
 }
@@ -816,28 +844,47 @@ function exportOrdersPDF(ordersList, filename, title){
   doc.setFontSize(9);
   doc.setTextColor(120);
   doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())}`, 14, 21);
-  const rows = [];
-  ordersList.forEach(o=>{
-    const cname = custName(o.customer_id);
-    o.items.forEach(i=>{
-      rows.push([o.order_number?`${o.order_number}`:"", o.date, cname, i.article_code, i.article_name, i.lot_code||"", i.bbd?formatDateEL(i.bbd):"", String(i.qty), Number(i.weight||0).toFixed(1), Number(i.price_per_kg ?? 0).toFixed(2), orderLineValue(i).toFixed(2)]);
+
+  const {groups, grand} = groupOrderLinesByCode(ordersList);
+  const subtotalStyle = {fillColor:[240,236,228], textColor:20, fontStyle:"bold"};
+  const grandStyle = {fillColor:[8,80,65], textColor:255, fontStyle:"bold"};
+  const cell = (content, styles) => styles ? {content, styles} : content;
+
+  const body = [];
+  groups.forEach(g=>{
+    g.lines.forEach(l=>{
+      body.push([l.orderNo, l.status, l.date, l.customer, g.code, g.name, l.lotCode, l.bbd, String(l.boxes), l.weight.toFixed(1), l.pricePerKg.toFixed(2), l.value.toFixed(2)]);
     });
+    body.push([
+      cell("", subtotalStyle), cell("", subtotalStyle), cell("", subtotalStyle), cell("", subtotalStyle),
+      cell(g.code, subtotalStyle), cell(t("code_subtotal_label"), subtotalStyle),
+      cell("", subtotalStyle), cell("", subtotalStyle),
+      cell(String(g.boxes), subtotalStyle), cell(g.weight.toFixed(1), subtotalStyle),
+      cell("", subtotalStyle), cell(formatEUR(g.value), subtotalStyle),
+    ]);
   });
+  if (groups.length>0){
+    body.push([
+      cell("", grandStyle), cell("", grandStyle), cell("", grandStyle), cell("", grandStyle),
+      cell("", grandStyle), cell(t("grand_total_label"), grandStyle),
+      cell("", grandStyle), cell("", grandStyle),
+      cell(String(grand.boxes), grandStyle), cell(grand.weight.toFixed(1), grandStyle),
+      cell("", grandStyle), cell(formatEUR(grand.value), grandStyle),
+    ]);
+  }
+
   doc.autoTable({
     startY: 26,
-    head: [["#",t("h_shortdate"),t("h_customer"),t("h_short"),t("h_article"),"Lot","BBD",t("h_shortboxes"),t("h_kg_h"),t("h_shortprice"),t("h_shorttotal")]],
-    body: rows,
+    head: [["#",t("h_status"),t("h_shortdate"),t("h_customer"),t("h_short"),t("h_article"),"Lot","BBD",t("h_shortboxes"),t("h_kg_h"),t("h_shortprice"),t("h_shorttotal")]],
+    body,
     styles:{fontSize:8, font:"NotoSans"},
     headStyles:{fillColor:[232,161,61], textColor:30, font:"NotoSans", fontStyle:"bold"},
   });
-  const totalBoxes = ordersList.reduce((s,o)=>s+orderTotalBoxes(o),0);
-  const totalWeight = ordersList.reduce((s,o)=>s+orderTotalWeight(o),0);
-  const totalValue = ordersList.reduce((s,o)=>s+orderTotal(o),0);
   const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || 30;
   doc.setFont("NotoSans","normal");
   doc.setFontSize(10);
   doc.setTextColor(20);
-  doc.text(`${ordersList.length} ${t("pdf_orders_label")} · ${totalBoxes} ${t("h_shortboxes")} · ${totalWeight.toFixed(1)} ${t("kg")} · ${t("pdf_total_label")}: ${formatEUR(totalValue)}`, 14, finalY+8);
+  doc.text(`${ordersList.length} ${t("pdf_orders_label")}`, 14, finalY+8);
   doc.save(filename);
 }
 function exportDailyReportCSV(date){
