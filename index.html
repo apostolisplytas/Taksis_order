@@ -276,6 +276,8 @@ const I18N = {
     toast_shipment_deleted: "Η αποστολή μεταφέρθηκε στον Κάδο", trash_shipments: "Αποστολές (pallet reports)",
     incoming_view_batch: "Ανά Batch", incoming_batch_label: "Batch", incoming_receive_batch: "✓ Παρέλαβε όλο το Batch",
     incoming_lots_count: "lots",
+    incoming_expected_arrival: "Αναμενόμενη ημ. άφιξης", incoming_export_all: "⇩ Εξαγωγή όλων",
+    toast_batch_arrival_saved: "Αποθηκεύτηκε",
   },
   en: {
     module_tag: "taksis_order", lang_switch: "EL",
@@ -382,6 +384,8 @@ const I18N = {
     toast_shipment_deleted: "Shipment moved to Trash", trash_shipments: "Shipments (pallet reports)",
     incoming_view_batch: "By Batch", incoming_batch_label: "Batch", incoming_receive_batch: "✓ Receive whole Batch",
     incoming_lots_count: "lots",
+    incoming_expected_arrival: "Expected arrival date", incoming_export_all: "⇩ Export all",
+    toast_batch_arrival_saved: "Saved",
   },
 };
 function t(key, vars){
@@ -499,7 +503,7 @@ let state = {
   stockExpanded: new Set(), // codes expanded in Σύνοψη stock (supports expand-all)
   viewingCustomerId: null,
   trash: {articles:[], stockUnits:[], customers:[], orders:[], shipments:[]},
-  incomingShipments: [], incomingView: "product", incomingSearch: "",
+  incomingShipments: [], incomingView: "product", incomingSearch: "", shipmentBatches: [],
   showImportIncoming: false, incomingImporting: false, expandedIncomingGroups: new Set(),
 };
 
@@ -566,14 +570,15 @@ async function fetchAllRows(table, applyFilters, selectCols){
 }
 
 async function loadAll(){
-  const [aRes, sRes, cRes, oRes, iRes] = await Promise.all([
+  const [aRes, sRes, cRes, oRes, iRes, bRes] = await Promise.all([
     sb.from("articles").select("*").is("deleted_at", null).order("name"),
     sb.from("stock_units").select("*").is("deleted_at", null),
     sb.from("customers").select("*").is("deleted_at", null).order("name"),
     sb.from("orders").select("*").is("deleted_at", null).order("created_at", {ascending:false}),
     fetchAllRows("incoming_shipments", q => q.is("deleted_at", null)),
+    sb.from("shipment_batches").select("*"),
   ]);
-  [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes],["incoming_shipments",iRes]].forEach(([label,res])=>{
+  [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes],["incoming_shipments",iRes],["shipment_batches",bRes]].forEach(([label,res])=>{
     if (res.error){ console.error(`load ${label} error`, res.error); showToast(`Σφάλμα φόρτωσης (${label}): ${res.error.message}`); }
   });
   state.articles = aRes.data || [];
@@ -581,6 +586,7 @@ async function loadAll(){
   state.customers = cRes.data || [];
   state.orders = oRes.data || [];
   state.incomingShipments = iRes.data || [];
+  state.shipmentBatches = bRes.data || [];
   state.loaded = true;
   render();
 }
@@ -2295,6 +2301,10 @@ function renderIncoming(){
           </div>
           <span class="muted2">${expanded?"▲":"▼"}</span>
         </div>
+        <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px;align-items:center;" onclick="event.stopPropagation()">
+          <label style="margin:0;font-size:11px;color:var(--muted2);text-transform:none;letter-spacing:0;">${t("incoming_expected_arrival")}</label>
+          <input type="date" data-batcharrival="${esc(bg.batch)}" value="${bg.expectedArrival||''}" style="width:auto;padding:6px 8px;font-size:12px;" />
+        </div>
         ${bg.allReceived
           ? `<span class="badge fresh" style="margin-top:8px;display:inline-block;">${t("incoming_status_received")}</span>`
           : `<button class="btn btn-primary" data-receivebatch="${esc(bg.batch)}" style="font-size:12px;padding:7px 12px;margin-top:8px;">${t("incoming_receive_batch")}</button>`}
@@ -2353,6 +2363,9 @@ function renderIncoming(){
 
   return `
     <div class="stack">
+      <div class="row" style="justify-content:flex-end;">
+        <button class="btn" id="exportIncomingBtn">${t("incoming_export_all")}</button>
+      </div>
       <div class="card" style="border-color:var(--brand);">
         <div class="row" style="cursor:pointer;" data-toggleimportincoming="1">
           <div>
@@ -2902,6 +2915,11 @@ function bindEvents(){
     const bg = batches.find(x=>x.batch===b.dataset.receivebatch);
     if (bg) markBatchReceived(bg);
   });
+  root.querySelectorAll("[data-batcharrival]").forEach(inp=>inp.onchange=()=>{
+    setBatchExpectedArrival(inp.dataset.batcharrival, inp.value);
+  });
+  const exportIncomingBtn = document.getElementById("exportIncomingBtn");
+  if (exportIncomingBtn) exportIncomingBtn.onclick = exportIncomingCSV;
   root.querySelectorAll("[data-deleteshipment]").forEach(b=>b.onclick=()=>{
     if (!confirm(state.lang==='en'?"Move this shipment's data to Trash?":"Μεταφορά αυτής της αποστολής στον Κάδο;")) return;
     deleteShipment(b.dataset.deleteshipment);
@@ -3491,8 +3509,18 @@ function groupIncomingByBatch(){
     const bg = batches[b];
     const lots = lotGroups.filter(lg=>bg.lotKeys.has(lg.key)).sort((a,b2)=>(a.fechaVen||"9999").localeCompare(b2.fechaVen||"9999"));
     const allReceived = lots.every(l=>l.allReceived);
-    return { batch:b, boxes:bg.boxes, weight:bg.weight, lots, allReceived };
+    const meta = state.shipmentBatches.find(x=>x.batch===b);
+    return { batch:b, boxes:bg.boxes, weight:bg.weight, lots, allReceived, expectedArrival: meta?meta.expected_arrival:"" };
   }).sort((a,b)=>a.batch.localeCompare(b.batch));
+}
+
+async function setBatchExpectedArrival(batch, dateValue){
+  const {error} = await sb.from("shipment_batches").upsert({batch, expected_arrival: dateValue || null, updated_at: new Date().toISOString()}, {onConflict:"batch"});
+  if (error){ showToast(`Σφάλμα: ${error.message}`); return; }
+  const existing = state.shipmentBatches.find(x=>x.batch===batch);
+  if (existing) existing.expected_arrival = dateValue || null;
+  else state.shipmentBatches.push({batch, expected_arrival: dateValue || null});
+  render();
 }
 
 async function markGroupReceived(group, opts){
@@ -3541,6 +3569,27 @@ async function markBatchReceived(batchGroup){
   }
   showToast(t("toast_incoming_received"));
   await loadAll();
+}
+
+function exportIncomingCSV(){
+  if (state.incomingShipments.length===0) return showToast(t("toast_no_data_export"));
+  const headers = [
+    "Shipment Ref","Pallet","Cod Prod","Producto","Elvida Code","Cajas","Unidades","Peso",
+    "Fecha P","Fecha F","Fecha Ven","Batch","Expected Arrival","Secuencia","Bruto","Tropa",
+    "EAN","EAN Prefijo","CODBAR CAJA","Received","Source File","Imported At"
+  ];
+  const rows = state.incomingShipments.map(r=>{
+    const meta = state.shipmentBatches.find(x=>x.batch===r.batch);
+    return [
+      r.shipment_ref, r.pallet, r.cod_prod, r.producto, r.elvida_code, r.cajas, r.unidades, r.peso,
+      r.fecha_p?formatDateEL(r.fecha_p):"", r.fecha_f?formatDateEL(r.fecha_f):"", r.fecha_ven?formatDateEL(r.fecha_ven):"",
+      r.batch, meta&&meta.expected_arrival?formatDateEL(meta.expected_arrival):"",
+      r.secuencia, r.bruto, r.tropa, r.ean, r.ean_prefijo, r.codbar_caja,
+      r.received ? t("incoming_status_received") : t("incoming_status_pending"),
+      r.source_filename, r.imported_at ? r.imported_at.slice(0,19).replace("T"," ") : ""
+    ];
+  });
+  downloadCSV(`taksis_order-incoming-${todayISO()}.csv`, headers, rows);
 }
 
 function listImportedShipments(){
