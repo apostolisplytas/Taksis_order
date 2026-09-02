@@ -491,13 +491,15 @@ let state = {
   expandedArticle: null, addingLotFor: null, expandedCustomer: null, showQuickOrder: false, quickOrderDraft: "",
   historyView: "day", historyDate: todayISO(), historyCustomer: "", stockView: "product",
   stockFilterText: "", stockFilterCodes: new Set(), stockFilterCategories: new Set(), stockFilterFrom: "", stockFilterTo: "",
+  incomingFilterText: "", incomingFilterCodes: new Set(), incomingFilterCategories: new Set(),
+  incomingFilterFrom: "", incomingFilterTo: "", expandedIncomingArticles: new Set(),
   historyDateMode: "single", historyRange: null,
   selectedOrders: new Set(),
   expandedDashCustomers: new Set(),
   stockExpanded: new Set(), // codes expanded in Σύνοψη stock (supports expand-all)
   viewingCustomerId: null,
   trash: {articles:[], stockUnits:[], customers:[], orders:[], shipments:[]},
-  incomingShipments: [], incomingView: "summary", incomingSearch: "",
+  incomingShipments: [], incomingView: "product", incomingSearch: "",
   showImportIncoming: false, incomingImporting: false, expandedIncomingGroups: new Set(),
 };
 
@@ -2091,30 +2093,179 @@ function trashRowHTML(kind, item, label, sub){
     </div>`;
 }
 /* ---------------- INCOMING TAB (Αναμενόμενα) ---------------- */
-function renderIncoming(){
-  const groups = groupIncomingByLot();
-  const shipments = listImportedShipments();
-
-  let bodyHTML = "";
-  if (state.incomingView === "summary"){
-    bodyHTML = groups.length===0 ? `<p class="center-note">${t("incoming_no_data")}</p>` : groups.map(g=>`
-      <div class="card ${g.allReceived?'':''}">
-        <div class="row" style="align-items:flex-start;">
-          <div style="min-width:0;">
-            <div style="font-size:14px;font-weight:500;">${esc(g.name||g.code)} <span class="muted2">${esc(g.code)}</span></div>
-            <div class="muted">${t("incoming_production_date")}: ${g.fechaP?formatDateEL(g.fechaP):"—"} · ${t("incoming_expiry_date")}: ${bbdBadge(g.fechaVen)}</div>
-            <div class="muted">${g.boxes} ${t("boxes_short")} · ${g.weight.toFixed(1)} ${t("kg")}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            ${g.allReceived
-              ? `<span class="badge fresh">${t("incoming_status_received")}</span>`
-              : `<button class="btn btn-primary" data-receiveincoming="${esc(g.key)}" style="font-size:12px;padding:7px 12px;">${t("incoming_mark_received")}</button>`}
-          </div>
+function incomingArticleTotals(code, lots){
+  const codeLots = lots.filter(l=>l.code===code);
+  return {
+    lots: codeLots,
+    boxes: codeLots.reduce((s,l)=>s+l.boxes,0),
+    weight: codeLots.reduce((s,l)=>s+l.weight,0),
+    allReceived: codeLots.length>0 && codeLots.every(l=>l.allReceived),
+  };
+}
+function incomingArticleCardHTML(code, name, lots){
+  const codeLots = lots.filter(l=>l.code===code).sort((a,b)=>(a.fechaVen||"9999").localeCompare(b.fechaVen||"9999"));
+  const boxes = codeLots.reduce((s,l)=>s+l.boxes,0);
+  const weight = codeLots.reduce((s,l)=>s+l.weight,0);
+  const allReceived = codeLots.length>0 && codeLots.every(l=>l.allReceived);
+  const expanded = state.expandedIncomingArticles.has(code);
+  return `
+    <div class="card">
+      <div class="row" style="cursor:pointer;" data-toggleincomingarticle="${esc(code)}">
+        <div>
+          <div style="font-size:14px;">${esc(name||code)} <span class="muted2">${esc(code)}</span></div>
+          <div class="muted">${categoryBadges(code)} · ${codeLots.length} ${t("incoming_lots_count")}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:600;">${boxes} ${t("boxes_short")}</div>
+          <div class="muted">${weight.toFixed(1)} ${t("kg")}</div>
         </div>
       </div>
-    `).join("");
-  } else if (state.incomingView === "batch"){
+      ${expanded ? `
+        <div class="stack" style="gap:0;">
+          ${codeLots.map(l=>`
+            <div class="lotrow">
+              <div class="row">
+                <div style="min-width:0;">
+                  <div style="font-size:13px;">${t("incoming_production_date")}: ${l.fechaP?formatDateEL(l.fechaP):"—"} ${bbdBadge(l.fechaVen)}</div>
+                  <div class="muted">${l.boxes} ${t("boxes_short")} · ${l.weight.toFixed(1)} ${t("kg")}</div>
+                </div>
+                ${l.allReceived?`<span class="badge fresh">${t("incoming_status_received")}</span>`:`<button class="btn" data-receiveincoming="${esc(l.key)}" style="font-size:11px;padding:5px 8px;">${t("incoming_mark_received")}</button>`}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>`;
+}
+
+function renderIncoming(){
+  const lots = groupIncomingByLot(); // βασική μονάδα: κωδικός + ημ. παραγωγής + ημ. λήξης
+  const shipments = listImportedShipments();
+
+  const viewOptions = [
+    ["product",t("view_product")],
+    ["code",t("view_code")],
+    ["category",t("view_category")],
+    ["expiry",t("view_expiry")],
+    ["month",t("view_month")],
+    ["batch",t("incoming_view_batch")],
+    ["raw",t("incoming_view_raw")],
+  ];
+
+  // Μοναδικοί κωδικοί -> {code, name}
+  const articlesMap = {};
+  lots.forEach(l=>{ if (!articlesMap[l.code]) articlesMap[l.code] = l.name || l.code; });
+  const allCodes = Object.keys(articlesMap);
+
+  let filterBarHTML = "";
+  let bodyHTML = "";
+  let sub = {boxes:0, weight:0};
+  const subtotalOfLots = (ls) => ls.reduce((acc,l)=>{ acc.boxes+=l.boxes; acc.weight+=l.weight; return acc; }, {boxes:0, weight:0});
+
+  if (state.incomingView === "product" || state.incomingView === "code"){
+    const q = state.incomingFilterText.trim().toLowerCase();
+    const chipCandidates = allCodes
+      .filter(c=>!q || c.toLowerCase().includes(q) || articlesMap[c].toLowerCase().includes(q))
+      .sort((a,b)=> state.incomingView==="product" ? articlesMap[a].localeCompare(articlesMap[b],'el') : naturalCodeSort(a,b));
+    filterBarHTML = `
+      <input id="incomingFilterText" placeholder="${t("filter_code_placeholder")}" value="${esc(state.incomingFilterText)}" />
+      <div class="row" style="margin:8px 0 6px;">
+        <span class="muted" style="font-size:11px;">${state.incomingFilterCodes.size>0 ? `${state.incomingFilterCodes.size} ${t("selected_items")}` : t("none_selected")}</span>
+        <div style="display:flex;gap:10px;">
+          ${chipCandidates.length>0?`<button class="btn link" id="selectAllIncomingChipsBtn" style="padding:0;">${t("select_all")}</button>`:""}
+          ${state.incomingFilterCodes.size>0 ? `<button class="btn link" id="clearIncomingCodeFilterBtn" style="padding:0;">${t("clear")}</button>` : ""}
+        </div>
+      </div>
+      <div class="chipwrap">
+        ${chipCandidates.length===0 ? `<span class="muted2" style="font-size:12px;">${t("no_results")}</span>` :
+          chipCandidates.map(c=>`<button type="button" class="chip ${state.incomingFilterCodes.has(c)?'active':''}" data-incomingcodechip="${esc(c)}">${esc(c)} · ${esc(articlesMap[c])}</button>`).join("")}
+      </div>`;
+    let codesToShow = state.incomingFilterCodes.size>0
+      ? allCodes.filter(c=>state.incomingFilterCodes.has(c))
+      : allCodes.filter(c=>!q || c.toLowerCase().includes(q) || articlesMap[c].toLowerCase().includes(q));
+    codesToShow = state.incomingView==="product"
+      ? codesToShow.sort((a,b)=>articlesMap[a].localeCompare(articlesMap[b],'el'))
+      : codesToShow.sort((a,b)=>naturalCodeSort(a,b));
+    sub = subtotalOfLots(lots.filter(l=>codesToShow.includes(l.code)));
+    bodyHTML = codesToShow.length===0 ? `<p class="center-note">${t("no_results")}</p>` : codesToShow.map(c=>incomingArticleCardHTML(c, articlesMap[c], lots)).join("");
+  }
+  else if (state.incomingView === "category"){
+    const allGroups = {};
+    allCodes.forEach(c=>{
+      const {temp, cut} = classifyArticle(c);
+      const key = temp+"|"+cut;
+      if (!allGroups[key]) allGroups[key] = [];
+      allGroups[key].push(c);
+    });
+    const allKeysOrdered = CATEGORY_ORDER.map(([tp,c])=>tp+"|"+c).filter(k=>allGroups[k]);
+    Object.keys(allGroups).forEach(k=>{ if (!allKeysOrdered.includes(k)) allKeysOrdered.push(k); });
+    filterBarHTML = `
+      <div class="chipwrap">
+        ${allKeysOrdered.map(key=>{
+          const [tp,c] = key.split("|");
+          return `<button type="button" class="chip ${state.incomingFilterCategories.has(key)?'active':''}" data-incomingcatchip="${key}">${tp} · ${c}</button>`;
+        }).join("")}
+      </div>
+      ${state.incomingFilterCategories.size>0 ? `<button class="btn link" id="clearIncomingCategoryFilterBtn" style="padding:0;margin-top:6px;">${t("clear")}</button>` : ""}
+    `;
+    const activeKeys = state.incomingFilterCategories.size>0 ? allKeysOrdered.filter(k=>state.incomingFilterCategories.has(k)) : allKeysOrdered;
+    const codesVisible = activeKeys.flatMap(k=>allGroups[k]||[]);
+    sub = subtotalOfLots(lots.filter(l=>codesVisible.includes(l.code)));
+    bodyHTML = codesVisible.length===0 ? `<p class="center-note">${t("no_items_category")}</p>` : activeKeys.map(key=>{
+      const [temp, cut] = key.split("|");
+      const codes = (allGroups[key]||[]).sort((a,b)=>articlesMap[a].localeCompare(articlesMap[b],'el'));
+      if (codes.length===0) return "";
+      const groupLots = lots.filter(l=>codes.includes(l.code));
+      const groupBoxes = groupLots.reduce((s,l)=>s+l.boxes,0);
+      const groupWeight = groupLots.reduce((s,l)=>s+l.weight,0);
+      const tempCls = temp==="Frozen" ? "frost" : temp==="Fresh" ? "fresh" : "";
+      return `
+        <div style="margin-bottom:14px;">
+          <div class="row" style="margin-bottom:6px;">
+            <span class="muted" style="text-transform:uppercase;letter-spacing:0.5px;"><span class="badge ${tempCls}">${temp}</span> <span class="badge">${cut}</span></span>
+            <span class="muted2" style="font-size:11px;">${groupBoxes} ${t("boxes_short")} · ${groupWeight.toFixed(1)} ${t("kg")}</span>
+          </div>
+          <div class="stack" style="gap:6px;">
+            ${codes.map(c=>incomingArticleCardHTML(c, articlesMap[c], lots)).join("")}
+          </div>
+        </div>`;
+    }).join("");
+  }
+  else if (state.incomingView === "expiry" || state.incomingView === "month"){
+    const isMonth = state.incomingView === "month";
+    const defaultFrom = isMonth ? todayISO() : "";
+    const defaultTo = isMonth ? new Date(Date.now()+30*86400000).toISOString().slice(0,10) : "";
+    filterBarHTML = `
+      <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <div><label>${t("from")}</label><input type="date" id="incomingFilterFrom" value="${state.incomingFilterFrom||defaultFrom}" style="width:auto;" /></div>
+        <div><label>${t("to")}</label><input type="date" id="incomingFilterTo" value="${state.incomingFilterTo||defaultTo}" style="width:auto;" /></div>
+      </div>`;
+    const fromDate = state.incomingFilterFrom || defaultFrom;
+    const toDate = state.incomingFilterTo || defaultTo;
+    let filteredLots = lots;
+    if (fromDate) filteredLots = filteredLots.filter(l=>l.fechaVen && l.fechaVen>=fromDate);
+    if (toDate) filteredLots = filteredLots.filter(l=>l.fechaVen && l.fechaVen<=toDate);
+    filteredLots = filteredLots.sort((a,b)=>(a.fechaVen||"9999-99-99").localeCompare(b.fechaVen||"9999-99-99"));
+    sub = subtotalOfLots(filteredLots);
+    bodyHTML = filteredLots.length===0 ? `<p class="center-note">${isMonth?t("no_lots_period"):t("incoming_no_data")}</p>` : filteredLots.map(l=>{
+      const days = l.fechaVen ? daysUntil(l.fechaVen) : null;
+      const cls = days===null ? "" : days<0 ? "expired" : days<=EXPIRY_WARNING_DAYS ? "expiring" : "";
+      return `
+        <div class="card ${cls} row">
+          <div>
+            <div style="font-size:13px;">${esc(l.name||l.code)} <span class="muted2">${esc(l.code)}</span></div>
+            <div class="muted">${t("incoming_production_date")}: ${l.fechaP?formatDateEL(l.fechaP):"—"} · ${l.boxes} ${t("boxes_short")} · ${l.weight.toFixed(1)} ${t("kg")}</div>
+          </div>
+          <div style="text-align:right;">
+            ${bbdBadge(l.fechaVen)}
+            <div style="margin-top:6px;">${l.allReceived?`<span class="badge fresh">${t("incoming_status_received")}</span>`:`<button class="btn" data-receiveincoming="${esc(l.key)}" style="font-size:11px;padding:5px 8px;">${t("incoming_mark_received")}</button>`}</div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+  else if (state.incomingView === "batch"){
     const batches = groupIncomingByBatch();
+    sub = { boxes: batches.reduce((s,b)=>s+b.boxes,0), weight: batches.reduce((s,b)=>s+b.weight,0) };
     bodyHTML = batches.length===0 ? `<p class="center-note">${t("incoming_no_data")}</p>` : batches.map(bg=>{
       const expanded = state.expandedIncomingGroups.has(bg.batch);
       return `
@@ -2146,7 +2297,8 @@ function renderIncoming(){
         ` : ""}
       </div>`;
     }).join("");
-  } else {
+  }
+  else { // raw
     const q = state.incomingSearch.trim().toLowerCase();
     let filtered = state.incomingShipments;
     if (q){
@@ -2161,8 +2313,8 @@ function renderIncoming(){
     }
     const total = filtered.length;
     const shown = filtered.slice(0, 100);
+    filterBarHTML = `<input id="incomingSearchInput" placeholder="${t("incoming_search_placeholder")}" value="${esc(state.incomingSearch)}" />`;
     bodyHTML = `
-      <input id="incomingSearchInput" placeholder="${t("incoming_search_placeholder")}" value="${esc(state.incomingSearch)}" style="margin-bottom:10px;" />
       ${shown.length===0 ? `<p class="center-note">${t("no_results")}</p>` : shown.map(r=>`
         <div class="card">
           <div class="row">
@@ -2178,6 +2330,8 @@ function renderIncoming(){
       ${total>100 ? `<p class="muted" style="text-align:center;margin-top:10px;">${t("incoming_showing_first",{n:100,total})}</p>` : ""}
     `;
   }
+
+  const showSubtotal = state.incomingView !== "raw";
 
   return `
     <div class="stack">
@@ -2212,10 +2366,12 @@ function renderIncoming(){
       ` : ""}
 
       <div class="tabs2">
-        <button data-incomingview="summary" class="${state.incomingView==='summary'?'active':''}">${t("incoming_view_summary")}</button>
-        <button data-incomingview="batch" class="${state.incomingView==='batch'?'active':''}">${t("incoming_view_batch")}</button>
-        <button data-incomingview="raw" class="${state.incomingView==='raw'?'active':''}">${t("incoming_view_raw")}</button>
+        ${viewOptions.map(([id,label])=>`<button data-incomingview="${id}" class="${state.incomingView===id?'active':''}">${label}</button>`).join("")}
       </div>
+      ${filterBarHTML ? `<div style="margin-bottom:10px;">${filterBarHTML}</div>` : ""}
+      ${showSubtotal ? `
+        <div class="stat" style="margin-bottom:10px;"><div class="muted">${t("subtotal_boxes_kg")}</div><div class="v" style="font-size:18px;">${sub.boxes} ${t("boxes_short")} · ${sub.weight.toFixed(1)} ${t("kg")}</div></div>
+      ` : ""}
       <div class="stack" style="gap:6px;">
         ${bodyHTML}
       </div>
@@ -2636,6 +2792,8 @@ function bindEvents(){
     state.tab=b.dataset.tab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
     state.showImportStock=false; state.showImportC=false; state.addingLotFor=null; state.selectedOrders.clear();
     state.showImportIncoming=false; state.incomingSearch="";
+    state.incomingFilterText=""; state.incomingFilterCodes=new Set(); state.incomingFilterCategories=new Set();
+    state.incomingFilterFrom=""; state.incomingFilterTo="";
     const preset = b.dataset.stockpreset;
     if (preset === "lowstock"){
       state.stockView = "product";
@@ -2662,6 +2820,45 @@ function bindEvents(){
   };
   root.querySelectorAll("[data-incomingview]").forEach(b=>b.onclick=()=>{
     state.incomingView = b.dataset.incomingview;
+    state.incomingFilterText=""; state.incomingFilterCodes=new Set(); state.incomingFilterCategories=new Set();
+    state.incomingFilterFrom=""; state.incomingFilterTo="";
+    render();
+  });
+  const incomingFilterText = document.getElementById("incomingFilterText");
+  if (incomingFilterText) incomingFilterText.oninput = e => {
+    state.incomingFilterText = e.target.value; render();
+    const el = document.getElementById("incomingFilterText");
+    if (el){ el.focus(); el.selectionStart = el.value.length; }
+  };
+  root.querySelectorAll("[data-incomingcodechip]").forEach(chip=>chip.onclick=()=>{
+    const code = chip.dataset.incomingcodechip;
+    if (state.incomingFilterCodes.has(code)) state.incomingFilterCodes.delete(code);
+    else state.incomingFilterCodes.add(code);
+    render();
+  });
+  const selectAllIncomingChipsBtn = document.getElementById("selectAllIncomingChipsBtn");
+  if (selectAllIncomingChipsBtn) selectAllIncomingChipsBtn.onclick = () => {
+    root.querySelectorAll("[data-incomingcodechip]").forEach(chip=>state.incomingFilterCodes.add(chip.dataset.incomingcodechip));
+    render();
+  };
+  const clearIncomingCodeFilterBtn = document.getElementById("clearIncomingCodeFilterBtn");
+  if (clearIncomingCodeFilterBtn) clearIncomingCodeFilterBtn.onclick = () => { state.incomingFilterCodes = new Set(); render(); };
+  root.querySelectorAll("[data-incomingcatchip]").forEach(chip=>chip.onclick=()=>{
+    const key = chip.dataset.incomingcatchip;
+    if (state.incomingFilterCategories.has(key)) state.incomingFilterCategories.delete(key);
+    else state.incomingFilterCategories.add(key);
+    render();
+  });
+  const clearIncomingCategoryFilterBtn = document.getElementById("clearIncomingCategoryFilterBtn");
+  if (clearIncomingCategoryFilterBtn) clearIncomingCategoryFilterBtn.onclick = () => { state.incomingFilterCategories = new Set(); render(); };
+  const incomingFilterFrom = document.getElementById("incomingFilterFrom");
+  if (incomingFilterFrom) incomingFilterFrom.onchange = e => { state.incomingFilterFrom = e.target.value; render(); };
+  const incomingFilterTo = document.getElementById("incomingFilterTo");
+  if (incomingFilterTo) incomingFilterTo.onchange = e => { state.incomingFilterTo = e.target.value; render(); };
+  root.querySelectorAll("[data-toggleincomingarticle]").forEach(el=>el.onclick=()=>{
+    const code = el.dataset.toggleincomingarticle;
+    if (state.expandedIncomingArticles.has(code)) state.expandedIncomingArticles.delete(code);
+    else state.expandedIncomingArticles.add(code);
     render();
   });
   const incomingSearchInput = document.getElementById("incomingSearchInput");
@@ -3161,28 +3358,44 @@ function parsePalletReportWorkbook(arrayBuffer, filename){
   const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:""});
   const titleRow = rows[0] || [];
   const shipmentRef = String(titleRow[0] || filename || "").trim() || filename;
-  // Στήλες A:Q (index 0-16): Pallet, Cod Prod, Producto, Cajas, Unidades, Peso, Fecha P, Fecha F,
-  // Secuencia, Bruto, Fecha Ven, Tropa, EAN, EAN Prefijo, CODBAR CAJA, Elvida Code, Batch
-  const dataRows = rows.slice(2).filter(r => r && r[15]); // κρατάμε μόνο γραμμές με Elvida Code
+
+  // Βρίσκουμε δυναμικά τη γραμμή επικεφαλίδας (αναζητώντας το κελί "Elvida Code"),
+  // αντί να υποθέτουμε πάντα σταθερό αριθμό γραμμών πριν τα δεδομένα.
+  let headerRowIdx = -1, elvidaColIdx = -1;
+  for (let i=0; i<Math.min(rows.length, 10); i++){
+    const idx = (rows[i]||[]).findIndex(c => String(c||"").trim().toLowerCase() === "elvida code");
+    if (idx !== -1){ headerRowIdx = i; elvidaColIdx = idx; break; }
+  }
+  if (headerRowIdx === -1) throw new Error("NO_HEADER_ROW");
+  const headerRow = rows[headerRowIdx].map(c => String(c||"").trim().toLowerCase());
+  const colIdx = (name) => headerRow.indexOf(name);
+  const idx_pallet = colIdx("pallet"), idx_codprod = colIdx("cod prod"), idx_producto = colIdx("producto"),
+        idx_cajas = colIdx("cajas"), idx_unidades = colIdx("unidades"), idx_peso = colIdx("peso"),
+        idx_fechap = colIdx("fecha p"), idx_fechaf = colIdx("fecha f"), idx_secuencia = colIdx("secuencia"),
+        idx_bruto = colIdx("bruto"), idx_fechaven = colIdx("fecha ven"), idx_tropa = colIdx("tropa"),
+        idx_ean = colIdx("ean"), idx_eanpref = colIdx("ean prefijo"), idx_codbar = colIdx("codbar caja"),
+        idx_batch = colIdx("batch");
+
+  const dataRows = rows.slice(headerRowIdx+1).filter(r => r && r[elvidaColIdx]);
   const records = dataRows.map(r => ({
     shipment_ref: shipmentRef,
-    pallet: String(r[0]||""),
-    cod_prod: String(r[1]||""),
-    producto: String(r[2]||""),
-    cajas: toNumber(r[3]),
-    unidades: toNumber(r[4]),
-    peso: toNumber(r[5]),
-    fecha_p: parseDateFlexible(r[6]),
-    fecha_f: parseDateFlexible(r[7]),
-    secuencia: String(r[8]||""),
-    bruto: toNumber(r[9]),
-    fecha_ven: parseDateFlexible(r[10]),
-    tropa: String(r[11]||""),
-    ean: String(r[12]||""),
-    ean_prefijo: String(r[13]||""),
-    codbar_caja: String(r[14]||""),
-    elvida_code: String(r[15]||"").trim(),
-    batch: String(r[16]||""),
+    pallet: String(r[idx_pallet]||""),
+    cod_prod: String(r[idx_codprod]||""),
+    producto: String(r[idx_producto]||""),
+    cajas: toNumber(r[idx_cajas]),
+    unidades: toNumber(r[idx_unidades]),
+    peso: toNumber(r[idx_peso]),
+    fecha_p: parseDateFlexible(r[idx_fechap]),
+    fecha_f: parseDateFlexible(r[idx_fechaf]),
+    secuencia: String(r[idx_secuencia]||""),
+    bruto: toNumber(r[idx_bruto]),
+    fecha_ven: parseDateFlexible(r[idx_fechaven]),
+    tropa: String(r[idx_tropa]||""),
+    ean: String(r[idx_ean]||""),
+    ean_prefijo: String(r[idx_eanpref]||""),
+    codbar_caja: String(r[idx_codbar]||""),
+    elvida_code: String(r[elvidaColIdx]||"").trim(),
+    batch: String(r[idx_batch]||""),
     source_filename: filename,
     received: false,
   }));
@@ -3202,15 +3415,18 @@ async function importIncomingShipment(file){
       const {error} = await sb.from("incoming_shipments").insert(chunk);
       if (error){ console.error("incoming import error", error); showToast(`Σφάλμα: ${error.message}`); state.incomingImporting=false; render(); return; }
     }
-    state.showImportIncoming = false;
     state.incomingImporting = false;
     showToast(t("toast_incoming_imported", {n: records.length}));
     await loadAll();
   } catch(e){
     state.incomingImporting = false;
     if (String(e.message).includes("NO_SUM_UP_SHEET")) showToast(t("toast_incoming_parse_error"));
+    else if (String(e.message).includes("NO_HEADER_ROW")) showToast(state.lang==='en' ? 'Could not find the header row (looking for "Elvida Code")' : 'Δεν βρέθηκε η γραμμή επικεφαλίδας (αναζήτηση "Elvida Code")');
     else showToast(`Σφάλμα: ${e.message}`);
     render();
+  } finally {
+    const el = document.getElementById("incomingFileInput");
+    if (el) el.value = "";
   }
 }
 
