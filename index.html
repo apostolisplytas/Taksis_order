@@ -260,6 +260,22 @@ const I18N = {
     code_subtotal_label: "Σύνολο κωδικού", grand_total_label: "ΓΕΝΙΚΟ ΣΥΝΟΛΟ",
     login_title: "Σύνδεση", login_email: "Email", login_password: "Κωδικός", login_button: "Σύνδεση",
     login_error_generic: "Λάθος email ή κωδικός", logout: "Αποσύνδεση", logging_in: "Σύνδεση...",
+    // Incoming shipments (αναμενόμενες ποσότητες)
+    nav_incoming: "Αναμενόμενα",
+    incoming_view_summary: "Σύνοψη ανά κωδικό", incoming_view_raw: "Όλα τα δεδομένα",
+    incoming_import_title: "⇪ Εισαγωγή Pallet Report",
+    incoming_import_hint: 'Ανέβασε το αρχείο pallet report (.xlsx) όπως το λαμβάνεις — το εργαλείο διαβάζει αυτόματα το φύλλο "SUM UP" και κάνει μόνο του το ομαδοποίηση ανά κωδικό Elvida, ημερομηνία παραγωγής, και ημερομηνία λήξης.',
+    incoming_no_data: "Δεν υπάρχουν αναμενόμενες ποσότητες ακόμα.",
+    incoming_production_date: "Ημ. παραγωγής", incoming_expiry_date: "Ημ. λήξης",
+    incoming_status_pending: "Εκκρεμεί", incoming_status_received: "Παρελήφθη",
+    incoming_mark_received: "✓ Παρελήφθη", incoming_search_placeholder: "Αναζήτηση (pallet, EAN, batch, κωδικός, προϊόν)...",
+    incoming_showing_first: "Δείχνει τα πρώτα {n} από {total} — στένεψε την αναζήτηση για περισσότερα",
+    incoming_shipments_title: "Εισαγμένες αποστολές", incoming_delete_shipment: "Διαγραφή αποστολής",
+    incoming_rows_count: "γραμμές", toast_incoming_imported: "Εισήχθησαν {n} γραμμές από την αποστολή",
+    toast_incoming_received: "Η παρτίδα καταχωρήθηκε ως stock", toast_incoming_parse_error: "Δεν βρέθηκε το φύλλο \"SUM UP\" στο αρχείο",
+    toast_shipment_deleted: "Η αποστολή μεταφέρθηκε στον Κάδο", trash_shipments: "Αποστολές (pallet reports)",
+    incoming_view_batch: "Ανά Batch", incoming_batch_label: "Batch", incoming_receive_batch: "✓ Παρέλαβε όλο το Batch",
+    incoming_lots_count: "lots",
   },
   en: {
     module_tag: "taksis_order", lang_switch: "EL",
@@ -351,6 +367,21 @@ const I18N = {
     code_subtotal_label: "Item subtotal", grand_total_label: "GRAND TOTAL",
     login_title: "Sign in", login_email: "Email", login_password: "Password", login_button: "Sign in",
     login_error_generic: "Wrong email or password", logout: "Sign out", logging_in: "Signing in...",
+    nav_incoming: "Incoming",
+    incoming_view_summary: "Summary by code", incoming_view_raw: "All data",
+    incoming_import_title: "⇪ Import Pallet Report",
+    incoming_import_hint: 'Upload the pallet report file (.xlsx) as you receive it — the tool automatically reads the "SUM UP" sheet and groups it by Elvida code, production date, and expiry date.',
+    incoming_no_data: "No expected quantities yet.",
+    incoming_production_date: "Production date", incoming_expiry_date: "Expiry date",
+    incoming_status_pending: "Pending", incoming_status_received: "Received",
+    incoming_mark_received: "✓ Received", incoming_search_placeholder: "Search (pallet, EAN, batch, code, product)...",
+    incoming_showing_first: "Showing first {n} of {total} — narrow your search for more",
+    incoming_shipments_title: "Imported shipments", incoming_delete_shipment: "Delete shipment",
+    incoming_rows_count: "rows", toast_incoming_imported: "Imported {n} rows from the shipment",
+    toast_incoming_received: "Lot recorded as stock", toast_incoming_parse_error: "Could not find the \"SUM UP\" sheet in the file",
+    toast_shipment_deleted: "Shipment moved to Trash", trash_shipments: "Shipments (pallet reports)",
+    incoming_view_batch: "By Batch", incoming_batch_label: "Batch", incoming_receive_batch: "✓ Receive whole Batch",
+    incoming_lots_count: "lots",
   },
 };
 function t(key, vars){
@@ -465,7 +496,9 @@ let state = {
   expandedDashCustomers: new Set(),
   stockExpanded: new Set(), // codes expanded in Σύνοψη stock (supports expand-all)
   viewingCustomerId: null,
-  trash: {articles:[], stockUnits:[], customers:[], orders:[]},
+  trash: {articles:[], stockUnits:[], customers:[], orders:[], shipments:[]},
+  incomingShipments: [], incomingView: "summary", incomingSearch: "",
+  showImportIncoming: false, incomingImporting: false, expandedIncomingGroups: new Set(),
 };
 
 function bindLoginEvents(){
@@ -513,34 +546,44 @@ async function initAuth(){
 }
 
 async function loadAll(){
-  const [aRes, sRes, cRes, oRes] = await Promise.all([
+  const [aRes, sRes, cRes, oRes, iRes] = await Promise.all([
     sb.from("articles").select("*").is("deleted_at", null).order("name"),
     sb.from("stock_units").select("*").is("deleted_at", null),
     sb.from("customers").select("*").is("deleted_at", null).order("name"),
-    sb.from("orders").select("*").is("deleted_at", null).order("created_at", {ascending:false})
+    sb.from("orders").select("*").is("deleted_at", null).order("created_at", {ascending:false}),
+    sb.from("incoming_shipments").select("*").is("deleted_at", null),
   ]);
-  [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes]].forEach(([label,res])=>{
+  [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes],["incoming_shipments",iRes]].forEach(([label,res])=>{
     if (res.error){ console.error(`load ${label} error`, res.error); showToast(`Σφάλμα φόρτωσης (${label}): ${res.error.message}`); }
   });
   state.articles = aRes.data || [];
   state.stockUnits = sRes.data || [];
   state.customers = cRes.data || [];
   state.orders = oRes.data || [];
+  state.incomingShipments = iRes.data || [];
   state.loaded = true;
   render();
 }
 async function loadTrash(){
-  const [aRes, sRes, cRes, oRes] = await Promise.all([
+  const [aRes, sRes, cRes, oRes, iRes] = await Promise.all([
     sb.from("articles").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
     sb.from("stock_units").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
     sb.from("customers").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
-    sb.from("orders").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false})
+    sb.from("orders").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
+    sb.from("incoming_shipments").select("shipment_ref, deleted_at").not("deleted_at","is",null),
   ]);
+  // Ομαδοποίηση διαγραμμένων γραμμών αποστολής σε ένα στοιχείο ανά shipment_ref
+  const shipmentMap = {};
+  (iRes.data||[]).forEach(r=>{
+    if (!shipmentMap[r.shipment_ref]) shipmentMap[r.shipment_ref] = {shipment_ref:r.shipment_ref, count:0, deleted_at:r.deleted_at};
+    shipmentMap[r.shipment_ref].count++;
+  });
   state.trash = {
     articles: aRes.data || [],
     stockUnits: sRes.data || [],
     customers: cRes.data || [],
     orders: oRes.data || [],
+    shipments: Object.values(shipmentMap).sort((a,b)=>(b.deleted_at||"").localeCompare(a.deleted_at||"")),
   };
   render();
 }
@@ -1220,6 +1263,7 @@ function render(){
     ["dashboard",t("nav_dashboard")],
     ["history",t("nav_history")],
     ["stock",t("nav_stock")],
+    ["incoming",t("nav_incoming")],
     ["products",t("nav_products")],
     ["customers",t("nav_customers")],
     ["trash",t("nav_trash")],
@@ -1230,6 +1274,7 @@ function render(){
     dashboard: `<svg viewBox="0 0 24 24" width="17" height="17"><rect x="3.5" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16.5" y="3" width="4" height="17" rx="1"/></svg>`,
     history: `<svg viewBox="0 0 24 24" width="17" height="17"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>`,
     stock: `<svg viewBox="0 0 24 24" width="17" height="17"><polygon points="12,3 21,8.5 12,14 3,8.5"/><polyline points="3,13.5 12,19 21,13.5" fill="none"/></svg>`,
+    incoming: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M3 10 L12 4 L21 10 V19 A1 1 0 0 1 20 20 H4 A1 1 0 0 1 3 19 Z"/><path d="M3 10 L12 15 L21 10"/><line x1="12" y1="15" x2="12" y2="20"/></svg>`,
     products: `<svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3 L20 7.5 V16.5 L12 21 L4 16.5 V7.5 Z" fill="none"/><path d="M4 7.5 L12 12 L20 7.5" fill="none"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`,
     customers: `<svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="8" r="4" fill="none"/><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7" fill="none"/></svg>`,
     trash: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none"><line x1="4" y1="6" x2="20" y2="6"/><path d="M6 6l1 15h10l1-15"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/><line x1="9" y1="6" x2="9.5" y2="3" /><line x1="15" y1="6" x2="14.5" y2="3"/><line x1="9.5" y1="3" x2="14.5" y2="3"/></svg>`,
@@ -1287,6 +1332,7 @@ function renderTab(){
   if (state.tab === "customers") return renderCustomers();
   if (state.tab === "history") return renderHistory();
   if (state.tab === "stock") return renderStock();
+  if (state.tab === "incoming") return renderIncoming();
   if (state.tab === "trash") return renderTrash();
   return "";
 }
@@ -2044,9 +2090,142 @@ function trashRowHTML(kind, item, label, sub){
       </div>
     </div>`;
 }
+/* ---------------- INCOMING TAB (Αναμενόμενα) ---------------- */
+function renderIncoming(){
+  const groups = groupIncomingByLot();
+  const shipments = listImportedShipments();
+
+  let bodyHTML = "";
+  if (state.incomingView === "summary"){
+    bodyHTML = groups.length===0 ? `<p class="center-note">${t("incoming_no_data")}</p>` : groups.map(g=>`
+      <div class="card ${g.allReceived?'':''}">
+        <div class="row" style="align-items:flex-start;">
+          <div style="min-width:0;">
+            <div style="font-size:14px;font-weight:500;">${esc(g.name||g.code)} <span class="muted2">${esc(g.code)}</span></div>
+            <div class="muted">${t("incoming_production_date")}: ${g.fechaP?formatDateEL(g.fechaP):"—"} · ${t("incoming_expiry_date")}: ${bbdBadge(g.fechaVen)}</div>
+            <div class="muted">${g.boxes} ${t("boxes_short")} · ${g.weight.toFixed(1)} ${t("kg")}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            ${g.allReceived
+              ? `<span class="badge fresh">${t("incoming_status_received")}</span>`
+              : `<button class="btn btn-primary" data-receiveincoming="${esc(g.key)}" style="font-size:12px;padding:7px 12px;">${t("incoming_mark_received")}</button>`}
+          </div>
+        </div>
+      </div>
+    `).join("");
+  } else if (state.incomingView === "batch"){
+    const batches = groupIncomingByBatch();
+    bodyHTML = batches.length===0 ? `<p class="center-note">${t("incoming_no_data")}</p>` : batches.map(bg=>{
+      const expanded = state.expandedIncomingGroups.has(bg.batch);
+      return `
+      <div class="card">
+        <div class="row" style="cursor:pointer;align-items:flex-start;" data-togglebatchgroup="${esc(bg.batch)}">
+          <div style="min-width:0;">
+            <div style="font-size:14px;font-weight:500;">${t("incoming_batch_label")}: ${esc(bg.batch)}</div>
+            <div class="muted">${bg.boxes} ${t("boxes_short")} · ${bg.weight.toFixed(1)} ${t("kg")} · ${bg.lots.length} ${t("incoming_lots_count")}</div>
+          </div>
+          <span class="muted2">${expanded?"▲":"▼"}</span>
+        </div>
+        ${bg.allReceived
+          ? `<span class="badge fresh" style="margin-top:8px;display:inline-block;">${t("incoming_status_received")}</span>`
+          : `<button class="btn btn-primary" data-receivebatch="${esc(bg.batch)}" style="font-size:12px;padding:7px 12px;margin-top:8px;">${t("incoming_receive_batch")}</button>`}
+        ${expanded ? `
+          <div class="stack" style="gap:0;margin-top:8px;">
+            ${bg.lots.map(l=>`
+              <div class="lotrow">
+                <div class="row">
+                  <div style="min-width:0;">
+                    <div style="font-size:13px;">${esc(l.name||l.code)} <span class="muted2">${esc(l.code)}</span></div>
+                    <div class="muted">${t("incoming_production_date")}: ${l.fechaP?formatDateEL(l.fechaP):"—"} · ${bbdBadge(l.fechaVen)} · ${l.boxes} ${t("boxes_short")} · ${l.weight.toFixed(1)} ${t("kg")}</div>
+                  </div>
+                  ${l.allReceived?`<span class="badge fresh">${t("incoming_status_received")}</span>`:`<button class="btn" data-receiveincoming="${esc(l.key)}" style="font-size:11px;padding:5px 8px;">${t("incoming_mark_received")}</button>`}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>`;
+    }).join("");
+  } else {
+    const q = state.incomingSearch.trim().toLowerCase();
+    let filtered = state.incomingShipments;
+    if (q){
+      filtered = filtered.filter(r =>
+        (r.pallet||"").toLowerCase().includes(q) ||
+        (r.ean||"").toLowerCase().includes(q) ||
+        (r.batch||"").toLowerCase().includes(q) ||
+        (r.elvida_code||"").toLowerCase().includes(q) ||
+        (r.producto||"").toLowerCase().includes(q) ||
+        (r.shipment_ref||"").toLowerCase().includes(q)
+      );
+    }
+    const total = filtered.length;
+    const shown = filtered.slice(0, 100);
+    bodyHTML = `
+      <input id="incomingSearchInput" placeholder="${t("incoming_search_placeholder")}" value="${esc(state.incomingSearch)}" style="margin-bottom:10px;" />
+      ${shown.length===0 ? `<p class="center-note">${t("no_results")}</p>` : shown.map(r=>`
+        <div class="card">
+          <div class="row">
+            <div style="min-width:0;">
+              <div style="font-size:13px;">${esc(r.producto)} <span class="muted2">${esc(r.elvida_code)}</span></div>
+              <div class="muted">Pallet ${esc(r.pallet)} · ${r.cajas} ${t("boxes_short")} · ${Number(r.peso).toFixed(1)} ${t("kg")} · ${r.fecha_p?formatDateEL(r.fecha_p):"—"} → ${r.fecha_ven?formatDateEL(r.fecha_ven):"—"}</div>
+              <div class="muted2" style="font-size:11px;">${esc(r.batch)} · ${esc(r.ean)}</div>
+            </div>
+            ${r.received?`<span class="badge fresh">${t("incoming_status_received")}</span>`:""}
+          </div>
+        </div>
+      `).join("")}
+      ${total>100 ? `<p class="muted" style="text-align:center;margin-top:10px;">${t("incoming_showing_first",{n:100,total})}</p>` : ""}
+    `;
+  }
+
+  return `
+    <div class="stack">
+      <div class="card" style="border-color:var(--brand);">
+        <div class="row" style="cursor:pointer;" data-toggleimportincoming="1">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--brand-bright);">${t("incoming_import_title")}</div>
+            <div class="muted">${t("incoming_import_hint")}</div>
+          </div>
+          <span class="muted2">${state.showImportIncoming?"▲":"▼"}</span>
+        </div>
+        ${state.showImportIncoming ? `
+          <div class="stack" style="gap:8px;margin-top:10px;">
+            <input type="file" id="incomingFileInput" accept=".xlsx" style="width:auto;padding:6px;font-size:12px;" ${state.incomingImporting?'disabled':''} />
+            ${state.incomingImporting?`<p class="muted">${t("loading")}</p>`:""}
+          </div>
+        ` : ""}
+      </div>
+
+      ${shipments.length>0 ? `
+        <div class="card" style="border-color:var(--border2);">
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">${t("incoming_shipments_title")}</p>
+          <div class="stack" style="gap:6px;">
+            ${shipments.map(s=>`
+              <div class="row" style="font-size:12px;">
+                <span class="muted">${esc(s.shipment_ref)} · ${s.count} ${t("incoming_rows_count")}</span>
+                <button class="btn danger" data-deleteshipment="${esc(s.shipment_ref)}">✕</button>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
+
+      <div class="tabs2">
+        <button data-incomingview="summary" class="${state.incomingView==='summary'?'active':''}">${t("incoming_view_summary")}</button>
+        <button data-incomingview="batch" class="${state.incomingView==='batch'?'active':''}">${t("incoming_view_batch")}</button>
+        <button data-incomingview="raw" class="${state.incomingView==='raw'?'active':''}">${t("incoming_view_raw")}</button>
+      </div>
+      <div class="stack" style="gap:6px;">
+        ${bodyHTML}
+      </div>
+    </div>
+  `;
+}
+
 function renderTrash(){
   const trashData = state.trash;
-  const totalCount = trashData.orders.length + trashData.articles.length + trashData.stockUnits.length + trashData.customers.length;
+  const totalCount = trashData.orders.length + trashData.articles.length + trashData.stockUnits.length + trashData.customers.length + (trashData.shipments?trashData.shipments.length:0);
   return `
     <div class="stack">
       <p class="muted" style="line-height:1.6;">${t("trash_desc")}</p>
@@ -2081,6 +2260,25 @@ function renderTrash(){
           <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${t("trash_lots")} (${trashData.stockUnits.length})</p>
           <div class="stack" style="gap:6px;">
             ${trashData.stockUnits.map(l=>trashRowHTML("stock_units", {...l, __id:l.sscc}, `${l.article_code} — Lot ${l.lot_code||"—"}`, `${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}`)).join("")}
+          </div>
+        </div>` : ""}
+
+      ${trashData.shipments && trashData.shipments.length>0 ? `
+        <div>
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${t("trash_shipments")} (${trashData.shipments.length})</p>
+          <div class="stack" style="gap:6px;">
+            ${trashData.shipments.map(s=>`
+              <div class="card row">
+                <div style="min-width:0;">
+                  <div style="font-size:13px;">${esc(s.shipment_ref)}</div>
+                  <div class="muted">${s.count} ${t("incoming_rows_count")}</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0;">
+                  <button class="btn" data-restoreshipment="${esc(s.shipment_ref)}">${t("restore")}</button>
+                  <button class="btn btn-danger-outline" data-purgeshipment="${esc(s.shipment_ref)}">${t("purge")}</button>
+                </div>
+              </div>
+            `).join("")}
           </div>
         </div>` : ""}
     </div>
@@ -2437,6 +2635,7 @@ function bindEvents(){
   root.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     state.tab=b.dataset.tab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
     state.showImportStock=false; state.showImportC=false; state.addingLotFor=null; state.selectedOrders.clear();
+    state.showImportIncoming=false; state.incomingSearch="";
     const preset = b.dataset.stockpreset;
     if (preset === "lowstock"){
       state.stockView = "product";
@@ -2450,6 +2649,47 @@ function bindEvents(){
     }
     render();
     if (state.tab === "trash") loadTrash();
+  });
+
+  root.querySelectorAll("[data-toggleimportincoming]").forEach(el=>el.onclick=()=>{
+    state.showImportIncoming = !state.showImportIncoming;
+    render();
+  });
+  const incomingFileInput = document.getElementById("incomingFileInput");
+  if (incomingFileInput) incomingFileInput.onchange = () => {
+    const file = incomingFileInput.files[0];
+    if (file) importIncomingShipment(file);
+  };
+  root.querySelectorAll("[data-incomingview]").forEach(b=>b.onclick=()=>{
+    state.incomingView = b.dataset.incomingview;
+    render();
+  });
+  const incomingSearchInput = document.getElementById("incomingSearchInput");
+  if (incomingSearchInput) incomingSearchInput.oninput = e => {
+    state.incomingSearch = e.target.value; render();
+    const el = document.getElementById("incomingSearchInput");
+    if (el){ el.focus(); el.selectionStart = el.value.length; }
+  };
+  root.querySelectorAll("[data-receiveincoming]").forEach(b=>b.onclick=()=>{
+    const groups = groupIncomingByLot();
+    const group = groups.find(g=>g.key===b.dataset.receiveincoming);
+    if (group) markGroupReceived(group);
+  });
+  root.querySelectorAll("[data-togglebatchgroup]").forEach(el=>el.onclick=()=>{
+    const b = el.dataset.togglebatchgroup;
+    if (state.expandedIncomingGroups.has(b)) state.expandedIncomingGroups.delete(b);
+    else state.expandedIncomingGroups.add(b);
+    render();
+  });
+  root.querySelectorAll("[data-receivebatch]").forEach(b=>b.onclick=()=>{
+    if (!confirm(state.lang==='en'?"Receive the whole batch into stock?":"Παραλαβή ολόκληρου του batch στο κανονικό stock;")) return;
+    const batches = groupIncomingByBatch();
+    const bg = batches.find(x=>x.batch===b.dataset.receivebatch);
+    if (bg) markBatchReceived(bg);
+  });
+  root.querySelectorAll("[data-deleteshipment]").forEach(b=>b.onclick=()=>{
+    if (!confirm(state.lang==='en'?"Move this shipment's data to Trash?":"Μεταφορά αυτής της αποστολής στον Κάδο;")) return;
+    deleteShipment(b.dataset.deleteshipment);
   });
 
   root.querySelectorAll("[data-togglequickorder]").forEach(el=>el.onclick=()=>{
@@ -2827,6 +3067,19 @@ function bindEvents(){
     showToast(t("toast_purged"));
     await loadTrash();
   });
+  root.querySelectorAll("[data-restoreshipment]").forEach(b=>b.onclick=async()=>{
+    const {error} = await sb.from("incoming_shipments").update({deleted_at:null}).eq("shipment_ref", b.dataset.restoreshipment);
+    if (error) return showToast(`Σφάλμα επαναφοράς: ${error.message}`);
+    showToast(t("toast_restored"));
+    await Promise.all([loadAll(), loadTrash()]);
+  });
+  root.querySelectorAll("[data-purgeshipment]").forEach(b=>b.onclick=async()=>{
+    if (!confirm("Οριστική διαγραφή — δεν μπορεί να αναιρεθεί. Συνέχεια;")) return;
+    const {error} = await sb.from("incoming_shipments").delete().eq("shipment_ref", b.dataset.purgeshipment);
+    if (error) return showToast(`Σφάλμα διαγραφής: ${error.message}`);
+    showToast(t("toast_purged"));
+    await loadTrash();
+  });
 }
 
 function collectArticleForm(){
@@ -2894,6 +3147,181 @@ async function saveCustomer(){
   state.editingCustomer = null;
   await loadAll();
   showToast(t("toast_saved"));
+}
+
+/* ---------------- INCOMING SHIPMENTS (Αναμενόμενα) ---------------- */
+// Διαβάζει το φύλλο "SUM UP" ενός pallet report .xlsx και επιστρέφει καθαρές εγγραφές
+// (μία ανά κιβώτιο), αγνοώντας τυχόν ενσωματωμένα pivot table υπολείμματα.
+function parsePalletReportWorkbook(arrayBuffer, filename){
+  if (!window.XLSX) throw new Error("XLSX_NOT_LOADED");
+  const wb = XLSX.read(arrayBuffer, {type:"array"});
+  const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === "sum up") || wb.SheetNames.find(n => n.trim().toLowerCase().includes("sum"));
+  if (!sheetName) throw new Error("NO_SUM_UP_SHEET");
+  const ws = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:""});
+  const titleRow = rows[0] || [];
+  const shipmentRef = String(titleRow[0] || filename || "").trim() || filename;
+  // Στήλες A:Q (index 0-16): Pallet, Cod Prod, Producto, Cajas, Unidades, Peso, Fecha P, Fecha F,
+  // Secuencia, Bruto, Fecha Ven, Tropa, EAN, EAN Prefijo, CODBAR CAJA, Elvida Code, Batch
+  const dataRows = rows.slice(2).filter(r => r && r[15]); // κρατάμε μόνο γραμμές με Elvida Code
+  const records = dataRows.map(r => ({
+    shipment_ref: shipmentRef,
+    pallet: String(r[0]||""),
+    cod_prod: String(r[1]||""),
+    producto: String(r[2]||""),
+    cajas: toNumber(r[3]),
+    unidades: toNumber(r[4]),
+    peso: toNumber(r[5]),
+    fecha_p: parseDateFlexible(r[6]),
+    fecha_f: parseDateFlexible(r[7]),
+    secuencia: String(r[8]||""),
+    bruto: toNumber(r[9]),
+    fecha_ven: parseDateFlexible(r[10]),
+    tropa: String(r[11]||""),
+    ean: String(r[12]||""),
+    ean_prefijo: String(r[13]||""),
+    codbar_caja: String(r[14]||""),
+    elvida_code: String(r[15]||"").trim(),
+    batch: String(r[16]||""),
+    source_filename: filename,
+    received: false,
+  }));
+  return { shipmentRef, records };
+}
+
+async function importIncomingShipment(file){
+  state.incomingImporting = true; render();
+  try{
+    const buf = await file.arrayBuffer();
+    const { records } = parsePalletReportWorkbook(buf, file.name);
+    if (records.length === 0){ showToast(t("toast_no_valid_records")); state.incomingImporting=false; render(); return; }
+    // Chunk insert για αποφυγή υπερβολικά μεγάλου request
+    const CHUNK = 300;
+    for (let i=0;i<records.length;i+=CHUNK){
+      const chunk = records.slice(i, i+CHUNK);
+      const {error} = await sb.from("incoming_shipments").insert(chunk);
+      if (error){ console.error("incoming import error", error); showToast(`Σφάλμα: ${error.message}`); state.incomingImporting=false; render(); return; }
+    }
+    state.showImportIncoming = false;
+    state.incomingImporting = false;
+    showToast(t("toast_incoming_imported", {n: records.length}));
+    await loadAll();
+  } catch(e){
+    state.incomingImporting = false;
+    if (String(e.message).includes("NO_SUM_UP_SHEET")) showToast(t("toast_incoming_parse_error"));
+    else showToast(`Σφάλμα: ${e.message}`);
+    render();
+  }
+}
+
+// Ομαδοποιεί τις γραμμές (μη διαγραμμένες) ανά κωδικό Elvida + ημ. παραγωγής + ημ. λήξης
+function groupIncomingByLot(){
+  const groups = {};
+  const order = [];
+  state.incomingShipments.forEach(r=>{
+    const key = `${r.elvida_code}|${r.fecha_p||""}|${r.fecha_ven||""}`;
+    if (!groups[key]){
+      groups[key] = { key, code:r.elvida_code, name:r.producto, fechaP:r.fecha_p, fechaVen:r.fecha_ven, boxes:0, weight:0, rows:[] };
+      order.push(key);
+    }
+    groups[key].boxes += Number(r.cajas)||0;
+    groups[key].weight += Number(r.peso)||0;
+    groups[key].rows.push(r);
+  });
+  return order.map(k=>{
+    const g = groups[k];
+    const pendingRows = g.rows.filter(r=>!r.received);
+    g.pendingBoxes = pendingRows.reduce((s,r)=>s+(Number(r.cajas)||0),0);
+    g.pendingWeight = pendingRows.reduce((s,r)=>s+(Number(r.peso)||0),0);
+    g.allReceived = pendingRows.length === 0;
+    // Προτίμησε το όνομα του δικού μας είδους αν ο κωδικός υπάρχει ήδη
+    const existingArticle = state.articles.find(a=>a.code===g.code);
+    if (existingArticle) g.name = existingArticle.name;
+    return g;
+  }).sort((a,b)=> (a.fechaVen||"9999").localeCompare(b.fechaVen||"9999"));
+}
+
+// Ομαδοποίηση ανά Batch, με ένθετη ανάλυση ανά (κωδικός + ημ. παραγωγής + ημ. λήξης) μέσα σε κάθε batch
+function groupIncomingByBatch(){
+  const lotGroups = groupIncomingByLot(); // ήδη έχει boxes/weight/pending ανά lot-κλειδί
+  const batches = {};
+  const order = [];
+  state.incomingShipments.forEach(r=>{
+    const b = r.batch || "—";
+    if (!batches[b]){ batches[b] = { batch:b, boxes:0, weight:0, lotKeys:new Set() }; order.push(b); }
+    batches[b].boxes += Number(r.cajas)||0;
+    batches[b].weight += Number(r.peso)||0;
+    batches[b].lotKeys.add(`${r.elvida_code}|${r.fecha_p||""}|${r.fecha_ven||""}`);
+  });
+  return order.map(b=>{
+    const bg = batches[b];
+    const lots = lotGroups.filter(lg=>bg.lotKeys.has(lg.key)).sort((a,b2)=>(a.fechaVen||"9999").localeCompare(b2.fechaVen||"9999"));
+    const allReceived = lots.every(l=>l.allReceived);
+    return { batch:b, boxes:bg.boxes, weight:bg.weight, lots, allReceived };
+  }).sort((a,b)=>a.batch.localeCompare(b.batch));
+}
+
+async function markGroupReceived(group, opts){
+  const skipReload = opts && opts.skipReload;
+  const pendingRows = group.rows.filter(r=>!r.received);
+  if (pendingRows.length === 0) return;
+  const boxes = pendingRows.reduce((s,r)=>s+(Number(r.cajas)||0),0);
+  const weight = pendingRows.reduce((s,r)=>s+(Number(r.peso)||0),0);
+
+  // Αν ο κωδικός δεν υπάρχει ακόμα ως είδος, δημιούργησέ τον
+  const existingArticle = state.articles.find(a=>a.code===group.code);
+  if (!existingArticle){
+    const {error: artErr} = await sb.from("articles").upsert({code: group.code, name: group.name || group.code}, {onConflict:"code"});
+    if (artErr){ showToast(`Σφάλμα: ${artErr.message}`); return; }
+  }
+
+  const lotCode = group.fechaP ? formatDateEL(group.fechaP) : "";
+  const shipmentRefs = [...new Set(pendingRows.map(r=>r.shipment_ref))].join(", ");
+  const newLot = {
+    sscc: uid(),
+    article_code: group.code,
+    zone: "",
+    volume_boxes: boxes,
+    weight_kg: weight,
+    lot_code: lotCode,
+    bbd: group.fechaVen || null,
+    reference: shipmentRefs,
+  };
+  const {error: lotErr} = await sb.from("stock_units").insert(newLot);
+  if (lotErr){ showToast(`Σφάλμα: ${lotErr.message}`); return; }
+
+  const ids = pendingRows.map(r=>r.id);
+  const {error: updErr} = await sb.from("incoming_shipments").update({received:true, received_at:new Date().toISOString()}).in("id", ids);
+  if (updErr){ showToast(`Σφάλμα: ${updErr.message}`); return; }
+
+  if (!skipReload){
+    showToast(t("toast_incoming_received"));
+    await loadAll();
+  }
+}
+
+async function markBatchReceived(batchGroup){
+  const pendingLots = batchGroup.lots.filter(l=>!l.allReceived);
+  for (const lot of pendingLots){
+    await markGroupReceived(lot, {skipReload:true});
+  }
+  showToast(t("toast_incoming_received"));
+  await loadAll();
+}
+
+function listImportedShipments(){
+  const map = {};
+  state.incomingShipments.forEach(r=>{
+    if (!map[r.shipment_ref]) map[r.shipment_ref] = {shipment_ref:r.shipment_ref, count:0, imported_at:r.imported_at};
+    map[r.shipment_ref].count++;
+  });
+  return Object.values(map).sort((a,b)=>(b.imported_at||"").localeCompare(a.imported_at||""));
+}
+async function deleteShipment(shipmentRef){
+  const {error} = await sb.from("incoming_shipments").update({deleted_at:new Date().toISOString()}).eq("shipment_ref", shipmentRef).is("deleted_at", null);
+  if (error) return showToast(`Σφάλμα: ${error.message}`);
+  showToast(t("toast_shipment_deleted"));
+  await loadAll();
 }
 
 async function doImportStock(){
