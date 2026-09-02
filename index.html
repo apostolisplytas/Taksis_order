@@ -547,13 +547,31 @@ async function initAuth(){
   });
 }
 
+// Το Supabase/PostgREST επιστρέφει το πολύ 1000 γραμμές ανά request από προεπιλογή.
+// Αυτή η συνάρτηση φέρνει ΟΛΕΣ τις γραμμές ενός πίνακα, σε σελίδες των 1000.
+async function fetchAllRows(table, applyFilters, selectCols){
+  const PAGE = 1000;
+  let allRows = [];
+  let from = 0;
+  while (true){
+    let query = sb.from(table).select(selectCols || "*");
+    if (applyFilters) query = applyFilters(query);
+    const {data, error} = await query.range(from, from+PAGE-1);
+    if (error) return {data: allRows, error};
+    allRows = allRows.concat(data||[]);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return {data: allRows, error: null};
+}
+
 async function loadAll(){
   const [aRes, sRes, cRes, oRes, iRes] = await Promise.all([
     sb.from("articles").select("*").is("deleted_at", null).order("name"),
     sb.from("stock_units").select("*").is("deleted_at", null),
     sb.from("customers").select("*").is("deleted_at", null).order("name"),
     sb.from("orders").select("*").is("deleted_at", null).order("created_at", {ascending:false}),
-    sb.from("incoming_shipments").select("*").is("deleted_at", null),
+    fetchAllRows("incoming_shipments", q => q.is("deleted_at", null)),
   ]);
   [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes],["incoming_shipments",iRes]].forEach(([label,res])=>{
     if (res.error){ console.error(`load ${label} error`, res.error); showToast(`Σφάλμα φόρτωσης (${label}): ${res.error.message}`); }
@@ -572,7 +590,7 @@ async function loadTrash(){
     sb.from("stock_units").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
     sb.from("customers").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
     sb.from("orders").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
-    sb.from("incoming_shipments").select("shipment_ref, deleted_at").not("deleted_at","is",null),
+    fetchAllRows("incoming_shipments", q => q.not("deleted_at","is",null), "shipment_ref, deleted_at"),
   ]);
   // Ομαδοποίηση διαγραμμένων γραμμών αποστολής σε ένα στοιχείο ανά shipment_ref
   const shipmentMap = {};
