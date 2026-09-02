@@ -455,6 +455,11 @@ function formatDateEL(iso){
   const [y,m,d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
+// Στο CSV, το Excel "μαντεύει" ημερομηνίες σε κείμενο και τις ξαναερμηνεύει σύμφωνα με τις
+// τοπικές ρυθμίσεις κάθε υπολογιστή (π.χ. DD/MM vs MM/DD) — γι' αυτό η ίδια ημερομηνία μπορεί
+// να φαίνεται σωστή σε έναν υπολογιστή και λάθος σε άλλον. Το πρόθεμα ' αναγκάζει το Excel να
+// το κρατήσει ως σταθερό κείμενο, χωρίς καμία ερμηνεία — αόρατο στο ίδιο το κελί.
+function csvGuard(s){ return s ? "'" + s : ""; }
 function daysUntil(iso){
   if (!iso) return null;
   const today = new Date(todayISO()+"T00:00:00");
@@ -799,7 +804,7 @@ function groupOrderLinesByCode(ordersList){
       if (!groups[code]){ groups[code] = {code, name:i.article_name, lines:[], boxes:0, weight:0, value:0}; codeOrder.push(code); }
       const val = orderLineValue(i);
       groups[code].lines.push({
-        orderNo: o.order_number || "", status: statusLabel(o.status), date: o.date, customer: cname,
+        orderNo: o.order_number || "", status: statusLabel(o.status), date: formatDateEL(o.date), customer: cname,
         lotCode: i.lot_code||"", bbd: i.bbd?formatDateEL(i.bbd):"",
         boxes: i.qty, weight: Number(i.weight||0), pricePerKg: Number(i.price_per_kg ?? 0), value: val,
       });
@@ -817,7 +822,7 @@ function exportOrdersCSV(ordersList, filename){
   const rows = [];
   groups.forEach(g=>{
     g.lines.forEach(l=>{
-      rows.push([l.orderNo, l.status, l.date, l.customer, g.code, g.name, l.lotCode, l.bbd, l.boxes, l.weight.toFixed(2), l.pricePerKg.toFixed(2), l.value.toFixed(2)]);
+      rows.push([l.orderNo, l.status, csvGuard(l.date), l.customer, g.code, g.name, l.lotCode, csvGuard(l.bbd), l.boxes, l.weight.toFixed(2), l.pricePerKg.toFixed(2), l.value.toFixed(2)]);
     });
     rows.push(["", "", "", "", g.code, `${t("code_subtotal_label")} ${g.code}`, "", "", g.boxes, g.weight.toFixed(2), "", g.value.toFixed(2)]);
   });
@@ -1188,7 +1193,7 @@ function exportStockCSV(){
   const rows = pairs.map(({u,a})=>[
     u.sscc, u.article_code, a?a.name:"",
     ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
-    u.zone||"", u.lot_code||"", u.bbd?formatDateEL(u.bbd):"", u.volume_boxes, u.weight_kg, u.reference||""
+    u.zone||"", u.lot_code||"", u.bbd?csvGuard(formatDateEL(u.bbd)):"", u.volume_boxes, u.weight_kg, u.reference||""
   ]);
   downloadCSV(`taksis_order-stock-${state.stockView}-${todayISO()}.csv`, headers, rows);
 }
@@ -3582,11 +3587,11 @@ function exportIncomingCSV(){
     const meta = state.shipmentBatches.find(x=>x.batch===r.batch);
     return [
       r.shipment_ref, r.pallet, r.cod_prod, r.producto, r.elvida_code, r.cajas, r.unidades, r.peso,
-      r.fecha_p?formatDateEL(r.fecha_p):"", r.fecha_f?formatDateEL(r.fecha_f):"", r.fecha_ven?formatDateEL(r.fecha_ven):"",
-      r.batch, meta&&meta.expected_arrival?formatDateEL(meta.expected_arrival):"",
+      csvGuard(r.fecha_p?formatDateEL(r.fecha_p):""), csvGuard(r.fecha_f?formatDateEL(r.fecha_f):""), csvGuard(r.fecha_ven?formatDateEL(r.fecha_ven):""),
+      r.batch, csvGuard(meta&&meta.expected_arrival?formatDateEL(meta.expected_arrival):""),
       r.secuencia, r.bruto, r.tropa, r.ean, r.ean_prefijo, r.codbar_caja,
       r.received ? t("incoming_status_received") : t("incoming_status_pending"),
-      r.source_filename, r.imported_at ? r.imported_at.slice(0,19).replace("T"," ") : ""
+      r.source_filename, csvGuard(r.imported_at ? r.imported_at.slice(0,19).replace("T"," ") : "")
     ];
   });
   downloadCSV(`taksis_order-incoming-${todayISO()}.csv`, headers, rows);
