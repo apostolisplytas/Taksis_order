@@ -278,6 +278,9 @@ const I18N = {
     incoming_lots_count: "lots",
     incoming_expected_arrival: "Αναμενόμενη ημ. άφιξης", incoming_export_all: "⇩ Εξαγωγή όλων",
     toast_batch_arrival_saved: "Αποθηκεύτηκε",
+    edit_order: "✏️ Επεξεργασία", editing_order_banner: "Επεξεργασία παραγγελίας",
+    save_order_changes: "Αποθήκευση αλλαγών", cancel_edit_order: "Ακύρωση επεξεργασίας",
+    toast_order_updated: "Η παραγγελία ενημερώθηκε",
   },
   en: {
     module_tag: "taksis_order", lang_switch: "EL",
@@ -386,6 +389,9 @@ const I18N = {
     incoming_lots_count: "lots",
     incoming_expected_arrival: "Expected arrival date", incoming_export_all: "⇩ Export all",
     toast_batch_arrival_saved: "Saved",
+    edit_order: "✏️ Edit", editing_order_banner: "Editing order",
+    save_order_changes: "Save changes", cancel_edit_order: "Cancel editing",
+    toast_order_updated: "Order updated",
   },
 };
 function t(key, vars){
@@ -494,6 +500,7 @@ let state = {
   articles: [], stockUnits: [], customers: [], orders: [],
   cart: {}, // sscc -> qty boxes
   cartPrices: {}, // sscc -> custom price/kg (undefined = use article's average price)
+  editingOrderId: null, editingOrderOriginalItems: null,
   customerId: "", search: "", loaded: false,
   editingArticle: null, editingCustomer: null,
   showImportStock: false, showImportC: false,
@@ -1422,6 +1429,7 @@ function naturalCodeSort(a,b){
 /* ---------------- ORDERS TAB ---------------- */
 function renderOrders(){
   const filtered = state.articles.filter(a => !state.search || a.name.toLowerCase().includes(state.search.toLowerCase()) || a.code.toLowerCase().includes(state.search.toLowerCase()));
+  const editingOrderNumber = state.editingOrderId ? (state.orders.find(o=>o.id===state.editingOrderId)?.order_number || "") : "";
   const cartEntries = Object.entries(state.cart).filter(([,q])=>q>0);
   const cartByArticle = {}; // code -> {name, boxes, weight, value}
   let cartTotalBoxes = 0, cartTotalWeight = 0, cartTotalValue = 0;
@@ -1442,6 +1450,14 @@ function renderOrders(){
 
   return `
     <div class="stack">
+      ${state.editingOrderId ? `
+        <div class="card" style="border-color:var(--amber);background:rgba(232,161,61,0.08);">
+          <div class="row">
+            <span style="font-size:13px;font-weight:600;color:var(--amber-bright);">${t("editing_order_banner")} ${esc(editingOrderNumber||"")}</span>
+            <button class="btn link" id="cancelEditOrderBtn" style="padding:0;">${t("cancel_edit_order")}</button>
+          </div>
+        </div>
+      ` : ""}
       <div>
         <label>${t("customer_label")}</label>
         <select id="customerSelect">
@@ -1530,7 +1546,7 @@ function renderOrders(){
             <span class="muted">${cartTotalBoxes} ${t("boxes_short")} · ${cartTotalWeight.toFixed(1)} ${t("kg")}</span>
             ${cartTotalValue>0?`<span style="font-weight:650;color:var(--brand-bright);font-family:var(--font-display);">${formatEUR(cartTotalValue)}</span>`:""}
           </div>
-          <button class="btn btn-primary" id="submitOrderBtn" style="width:100%;padding:12px;">${t("submit_order")}</button>
+          <button class="btn btn-primary" id="submitOrderBtn" style="width:100%;padding:12px;">${state.editingOrderId ? t("save_order_changes") : t("submit_order")}</button>
         </div>` : ""}
     </div>
   `;
@@ -1581,6 +1597,87 @@ function applyQuickOrder(){
   render();
   if (problems.length > 0) showToast(problems.slice(0,3).join(" · ") + (problems.length>3 ? ` (+${problems.length-3} ακόμα)` : ""));
   else showToast(`Προστέθηκαν ${touchedCount} είδη στο καλάθι με FEFO`);
+}
+
+async function startEditOrder(orderId){
+  const order = state.orders.find(o=>o.id===orderId);
+  if (!order) return;
+  // Επαναφέρουμε προσωρινά το απόθεμα των τρεχόντων ειδών της παραγγελίας, ώστε να είναι
+  // διαθέσιμο για αναδιάταξη κατά την επεξεργασία.
+  for (const it of (order.items||[])){
+    if (!it.sscc) continue;
+    const su = state.stockUnits.find(x=>x.sscc===it.sscc);
+    if (!su) continue;
+    const newBoxes = su.volume_boxes + (it.qty||0);
+    const newWeight = su.weight_kg + (it.weight||0);
+    await sb.from("stock_units").update({volume_boxes:newBoxes, weight_kg:newWeight}).eq("sscc", it.sscc);
+  }
+  state.editingOrderId = orderId;
+  state.editingOrderOriginalItems = JSON.parse(JSON.stringify(order.items || []));
+  state.customerId = order.customer_id;
+  state.cart = {};
+  state.cartPrices = {};
+  (order.items||[]).forEach(it=>{
+    if (!it.sscc) return;
+    state.cart[it.sscc] = it.qty;
+    if (it.price_per_kg !== undefined) state.cartPrices[it.sscc] = it.price_per_kg;
+  });
+  state.tab = "orders";
+  await loadAll();
+}
+
+async function cancelEditOrder(){
+  // Ακύρωση: ξαναεφαρμόζουμε τα αρχικά είδη (αφαιρούμε ξανά το απόθεμα), χωρίς αλλαγή στην παραγγελία.
+  for (const it of (state.editingOrderOriginalItems||[])){
+    if (!it.sscc) continue;
+    const su = state.stockUnits.find(x=>x.sscc===it.sscc);
+    if (!su) continue;
+    const newBoxes = Math.max(0, su.volume_boxes - (it.qty||0));
+    const newWeight = Math.max(0, su.weight_kg - (it.weight||0));
+    await sb.from("stock_units").update({volume_boxes:newBoxes, weight_kg:newWeight}).eq("sscc", it.sscc);
+  }
+  state.editingOrderId = null;
+  state.editingOrderOriginalItems = null;
+  state.cart = {};
+  state.cartPrices = {};
+  state.customerId = "";
+  await loadAll();
+}
+
+async function saveOrderEdits(){
+  if (!state.customerId) return showToast(t("toast_select_customer"));
+  const cartEntries = Object.entries(state.cart).filter(([,q])=>q>0);
+  if (cartEntries.length===0) return showToast(t("toast_add_products"));
+  const items = [];
+  for (const [sscc, qty] of cartEntries){
+    const su = state.stockUnits.find(x=>x.sscc===sscc);
+    if (!su) continue;
+    if (qty > su.volume_boxes) return showToast(`Ανεπαρκές απόθεμα στο lot ${su.lot_code||sscc}`);
+    const a = state.articles.find(x=>x.code===su.article_code);
+    const ratio = su.volume_boxes > 0 ? (su.weight_kg / su.volume_boxes) : 0;
+    const weight = qty*ratio;
+    const pricePerKg = state.cartPrices[sscc] !== undefined ? state.cartPrices[sscc] : (a?.price_per_kg||0);
+    items.push({sscc, article_code: su.article_code, article_name: a?.name||su.article_code, lot_code: su.lot_code, bbd: su.bbd, qty, weight, price: a?.price||0, price_per_kg: pricePerKg, value: weight*pricePerKg});
+  }
+  if (items.length===0) return showToast(t("toast_add_products"));
+
+  const orderId = state.editingOrderId;
+  const {error: updErr} = await sb.from("orders").update({items, customer_id: state.customerId}).eq("id", orderId);
+  if (updErr) return showToast(`Σφάλμα: ${updErr.message}`);
+
+  for (const it of items){
+    const su = state.stockUnits.find(x=>x.sscc===it.sscc);
+    const newBoxes = Math.max(0, su.volume_boxes - it.qty);
+    const newWeight = Math.max(0, su.weight_kg - it.weight);
+    await sb.from("stock_units").update({volume_boxes:newBoxes, weight_kg:newWeight}).eq("sscc", it.sscc);
+  }
+
+  state.editingOrderId = null;
+  state.editingOrderOriginalItems = null;
+  state.cart = {};
+  state.cartPrices = {};
+  showToast(t("toast_order_updated"));
+  await loadAll();
 }
 
 async function submitOrder(){
@@ -2066,6 +2163,7 @@ function renderOrderCard(o, showDate){
         <select data-orderstatus="${o.id}" style="width:auto;font-size:12px;padding:6px 8px;">
           ${ORDER_STATUSES.map(s=>`<option value="${s.id}" ${(o.status||"")===s.id?'selected':''}>${t(s.key)}</option>`).join("")}
         </select>
+        <button class="btn" data-editorder="${o.id}" style="font-size:12px;padding:6px 10px;">${t("edit_order")}</button>
         <button class="btn" data-deliveryslip="${o.id}" style="font-size:12px;padding:6px 10px;">${t("delivery_slip")}</button>
         <button class="btn" data-logifrio="${o.id}" style="font-size:12px;padding:6px 10px;">⇩ Logifrio template</button>
       </div>
@@ -2825,7 +2923,16 @@ function bindEvents(){
   if (logoutBtnMobile) logoutBtnMobile.onclick = logout;
 
   root.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
-    state.tab=b.dataset.tab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
+    const targetTab = b.dataset.tab;
+    if (state.editingOrderId && targetTab !== "orders"){
+      cancelEditOrder().then(() => {
+        state.tab = targetTab;
+        render();
+        if (state.tab === "trash") loadTrash();
+      });
+      return;
+    }
+    state.tab=targetTab; state.search=""; state.editingArticle=null; state.editingCustomer=null;
     state.showImportStock=false; state.showImportC=false; state.addingLotFor=null; state.selectedOrders.clear();
     state.showImportIncoming=false; state.incomingSearch="";
     state.incomingFilterText=""; state.incomingFilterCodes=new Set(); state.incomingFilterCategories=new Set();
@@ -3025,7 +3132,9 @@ function bindEvents(){
     render();
   });
   const submitBtn = document.getElementById("submitOrderBtn");
-  if (submitBtn) submitBtn.onclick = submitOrder;
+  if (submitBtn) submitBtn.onclick = () => state.editingOrderId ? saveOrderEdits() : submitOrder();
+  const cancelEditOrderBtn = document.getElementById("cancelEditOrderBtn");
+  if (cancelEditOrderBtn) cancelEditOrderBtn.onclick = cancelEditOrder;
 
   // articles tab
   const addArticleBtn = document.getElementById("addArticleBtn");
@@ -3221,6 +3330,9 @@ function bindEvents(){
     const {error} = await sb.from("orders").update({status: newStatus || null}).eq("id", id);
     if (error) showToast(`Σφάλμα: ${error.message}`);
     else showToast(`Κατάσταση: ${statusLabel(newStatus)}`);
+  });
+  root.querySelectorAll("[data-editorder]").forEach(b=>b.onclick=()=>{
+    startEditOrder(b.dataset.editorder);
   });
   root.querySelectorAll("[data-deliveryslip]").forEach(b=>b.onclick=()=>{
     const order = state.orders.find(o=>o.id===b.dataset.deliveryslip);
