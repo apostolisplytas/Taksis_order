@@ -281,6 +281,7 @@ const I18N = {
     edit_order: "✏️ Επεξεργασία", editing_order_banner: "Επεξεργασία παραγγελίας",
     save_order_changes: "Αποθήκευση αλλαγών", cancel_edit_order: "Ακύρωση επεξεργασίας",
     toast_order_updated: "Η παραγγελία ενημερώθηκε",
+    view_elvida_batch: "Ανά Elvida Batch", no_batch_reference: "— (χωρίς reference)",
   },
   en: {
     module_tag: "taksis_order", lang_switch: "EL",
@@ -392,6 +393,7 @@ const I18N = {
     edit_order: "✏️ Edit", editing_order_banner: "Editing order",
     save_order_changes: "Save changes", cancel_edit_order: "Cancel editing",
     toast_order_updated: "Order updated",
+    view_elvida_batch: "By Elvida Batch", no_batch_reference: "— (no reference)",
   },
 };
 function t(key, vars){
@@ -507,6 +509,7 @@ let state = {
   expandedArticle: null, addingLotFor: null, expandedCustomer: null, showQuickOrder: false, quickOrderDraft: "",
   historyView: "day", historyDate: todayISO(), historyCustomer: "", stockView: "product",
   stockFilterText: "", stockFilterCodes: new Set(), stockFilterCategories: new Set(), stockFilterFrom: "", stockFilterTo: "",
+  stockFilterBatches: new Set(), stockExpandedBatches: new Set(),
   incomingFilterText: "", incomingFilterCodes: new Set(), incomingFilterCategories: new Set(),
   incomingFilterFrom: "", incomingFilterTo: "", expandedIncomingArticles: new Set(),
   historyDateMode: "single", historyRange: null,
@@ -1183,6 +1186,12 @@ function getStockExportPairs(){
       if (rx!==ry) return rx-ry;
       return (x.a?x.a.name:"").localeCompare(y.a?y.a.name:"", "el");
     });
+  } else if (view === "batch"){
+    const noRefLabel = t("no_batch_reference");
+    if (state.stockFilterBatches.size>0){
+      pairs = pairs.filter(p=>state.stockFilterBatches.has(p.u.reference || noRefLabel));
+    }
+    pairs.sort((x,y)=>(x.u.reference||noRefLabel).localeCompare(y.u.reference||noRefLabel) || (x.u.bbd||"").localeCompare(y.u.bbd||""));
   } else { // "product" (default)
     pairs = pairs.filter(p=>codeOrTextFilterMatches(p.u,p.a));
     pairs.sort((x,y)=>(x.a?x.a.name:"").localeCompare(y.a?y.a.name:"", "el") || (x.u.bbd||"").localeCompare(y.u.bbd||""));
@@ -1511,7 +1520,7 @@ function renderOrders(){
                     <div class="row">
                       <div style="min-width:0;">
                         <div style="font-size:13px;">Lot ${esc(l.lot_code||"—")} ${bbdBadge(l.bbd)}</div>
-                        <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} ${t("available_boxes")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
+                        <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} ${t("available_boxes")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}${l.reference?" · ref: "+esc(l.reference):""}</div>
                       </div>
                       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                         <button class="qtybtn" data-lotqtydown="${l.sscc}">−</button>
@@ -2195,7 +2204,7 @@ function articleCardHTML(a){
               <div class="row">
                 <div>
                   <div style="font-size:13px;">Lot ${esc(l.lot_code||"—")} ${bbdBadge(l.bbd)}</div>
-                  <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
+                  <div class="muted">${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}${l.reference?" · ref: "+esc(l.reference):""}</div>
                 </div>
               </div>
             </div>
@@ -2588,6 +2597,7 @@ function renderStock(){
     ["category",t("view_category")],
     ["expiry",t("view_expiry")],
     ["month",t("view_month")],
+    ["batch",t("view_elvida_batch")],
   ];
 
   const subtotalOf = (arts) => arts.reduce((acc,a)=>{
@@ -2696,7 +2706,7 @@ function renderStock(){
         <div class="card ${cls} row">
           <div>
             <div style="font-size:13px;">${esc(a?a.name:l.article_code)} <span class="muted2">${esc(l.article_code)}</span></div>
-            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
+            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}${l.reference?" · ref: "+esc(l.reference):""}</div>
           </div>
           ${bbdBadge(l.bbd)}
         </div>`;
@@ -2723,9 +2733,56 @@ function renderStock(){
         <div class="card ${cls} row">
           <div>
             <div style="font-size:13px;">${esc(a?a.name:l.article_code)} <span class="muted2">${esc(l.article_code)}</span></div>
-            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
+            <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}${l.reference?" · ref: "+esc(l.reference):""}</div>
           </div>
           ${bbdBadge(l.bbd)}
+        </div>`;
+    }).join("");
+  }
+  else if (state.stockView === "batch"){
+    const allLotsWithStock = state.stockUnits.filter(u=>(u.volume_boxes>0||u.weight_kg>0));
+    const batchKeys = [...new Set(allLotsWithStock.map(u=>u.reference || t("no_batch_reference")))].sort();
+    filterBarHTML = `
+      <div class="chipwrap">
+        ${batchKeys.map(key=>`<button type="button" class="chip ${state.stockFilterBatches.has(key)?'active':''}" data-batchchip="${esc(key)}">${esc(key)}</button>`).join("")}
+      </div>
+      ${state.stockFilterBatches.size>0 ? `<button class="btn link" id="clearBatchFilterBtn" style="padding:0;margin-top:6px;">${t("clear")}</button>` : ""}
+    `;
+    const activeBatches = state.stockFilterBatches.size>0 ? batchKeys.filter(k=>state.stockFilterBatches.has(k)) : batchKeys;
+    const visibleLots = allLotsWithStock.filter(u=>activeBatches.includes(u.reference || t("no_batch_reference")));
+    sub = subtotalOfLots(visibleLots);
+    listHTML = activeBatches.length===0 ? `<p class="center-note">${t("no_results")}</p>` : activeBatches.map(batchKey=>{
+      const lotsInBatch = allLotsWithStock.filter(u=>(u.reference || t("no_batch_reference"))===batchKey);
+      if (lotsInBatch.length===0) return "";
+      const batchBoxes = lotsInBatch.reduce((s,u)=>s+(Number(u.volume_boxes)||0),0);
+      const batchWeight = lotsInBatch.reduce((s,u)=>s+(Number(u.weight_kg)||0),0);
+      const expanded = state.stockExpandedBatches.has(batchKey);
+      return `
+        <div class="card">
+          <div class="row" style="cursor:pointer;align-items:flex-start;" data-togglestockbatch="${esc(batchKey)}">
+            <div style="min-width:0;">
+              <div style="font-size:14px;font-weight:500;">${esc(batchKey)}</div>
+              <div class="muted">${batchBoxes} ${t("boxes_short")} · ${batchWeight.toFixed(1)} ${t("kg")} · ${lotsInBatch.length} ${t("incoming_lots_count")}</div>
+            </div>
+            <span class="muted2">${expanded?"▲":"▼"}</span>
+          </div>
+          ${expanded ? `
+            <div class="stack" style="gap:0;margin-top:8px;">
+              ${lotsInBatch.sort((x,y)=>(x.bbd||"9999").localeCompare(y.bbd||"9999")).map(l=>{
+                const a = state.articles.find(x=>x.code===l.article_code);
+                return `
+                <div class="lotrow">
+                  <div class="row">
+                    <div style="min-width:0;">
+                      <div style="font-size:13px;">${esc(a?a.name:l.article_code)} <span class="muted2">${esc(l.article_code)}</span></div>
+                      <div class="muted">Lot ${esc(l.lot_code||"—")} · ${zoneBadge(l.zone)} ${l.volume_boxes} ${t("boxes_short")} · ${Number(l.weight_kg).toFixed(1)} ${t("kg")}</div>
+                    </div>
+                    ${bbdBadge(l.bbd)}
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>
+          ` : ""}
         </div>`;
     }).join("");
   }
@@ -3279,7 +3336,21 @@ function bindEvents(){
   root.querySelectorAll("[data-stockview]").forEach(b=>b.onclick=()=>{
     state.stockView=b.dataset.stockview;
     state.stockFilterText=""; state.stockFilterCodes=new Set(); state.stockFilterCategories=new Set();
-    state.stockFilterFrom=""; state.stockFilterTo="";
+    state.stockFilterFrom=""; state.stockFilterTo=""; state.stockFilterBatches=new Set();
+    render();
+  });
+  root.querySelectorAll("[data-batchchip]").forEach(chip=>chip.onclick=()=>{
+    const key = chip.dataset.batchchip;
+    if (state.stockFilterBatches.has(key)) state.stockFilterBatches.delete(key);
+    else state.stockFilterBatches.add(key);
+    render();
+  });
+  const clearBatchFilterBtn = document.getElementById("clearBatchFilterBtn");
+  if (clearBatchFilterBtn) clearBatchFilterBtn.onclick = () => { state.stockFilterBatches = new Set(); render(); };
+  root.querySelectorAll("[data-togglestockbatch]").forEach(el=>el.onclick=()=>{
+    const key = el.dataset.togglestockbatch;
+    if (state.stockExpandedBatches.has(key)) state.stockExpandedBatches.delete(key);
+    else state.stockExpandedBatches.add(key);
     render();
   });
   const stockFilterText = document.getElementById("stockFilterText");
