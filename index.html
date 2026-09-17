@@ -499,6 +499,8 @@ let state = {
   tab: "orders",
   lang: (function(){ try { return localStorage.getItem("taksis_lang") || "el"; } catch(e){ return "el"; } })(),
   session: null, authChecked: false, loginEmail: "", loginPassword: "", loginError: "",
+  tenantId: null, tenantRole: "member", activeTenantId: null, activeTenantName: "",
+  tenantConfig: {}, availableTenants: [],
   articles: [], stockUnits: [], customers: [], orders: [],
   cart: {}, // sscc -> qty boxes
   cartPrices: {}, // sscc -> custom price/kg (undefined = use article's average price)
@@ -542,6 +544,7 @@ function bindLoginEvents(){
     state.session = data.session;
     state.loginPassword = "";
     render();
+    await loadTenantContext();
     await loadAll();
   };
 }
@@ -550,18 +553,56 @@ async function logout(){
   state.session = null;
   state.loaded = false;
   state.articles = []; state.stockUnits = []; state.customers = []; state.orders = [];
+  state.tenantId = null; state.activeTenantId = null; state.tenantConfig = {}; state.availableTenants = [];
+  applyTenantBranding();
   render();
 }
+async function loadTenantContext(){
+  const { data: profile, error } = await sb.from("profiles").select("tenant_id, role").eq("id", state.session.user.id).maybeSingle();
+  if (error) console.error("loadTenantContext profile error", error);
+  state.tenantId = profile?.tenant_id || null;
+  state.tenantRole = profile?.role || "member";
+  state.activeTenantId = state.tenantId;
+  if (state.tenantRole === "admin"){
+    const { data: tenants } = await sb.from("tenants").select("id,name,slug").order("name");
+    state.availableTenants = tenants || [];
+  } else {
+    state.availableTenants = [];
+  }
+  await loadActiveTenantConfig();
+}
+async function loadActiveTenantConfig(){
+  if (!state.activeTenantId){ state.tenantConfig = {}; state.activeTenantName = ""; applyTenantBranding(); return; }
+  const { data: tenant, error } = await sb.from("tenants").select("name, config").eq("id", state.activeTenantId).maybeSingle();
+  if (error) console.error("loadActiveTenantConfig error", error);
+  state.tenantConfig = (tenant && tenant.config) || {};
+  state.activeTenantName = tenant?.name || "";
+  applyTenantBranding();
+}
+function applyTenantBranding(){
+  const b = (state.tenantConfig && state.tenantConfig.branding) || null;
+  const root = document.documentElement;
+  if (b && b.primaryColor) root.style.setProperty("--brand", b.primaryColor);
+  else root.style.removeProperty("--brand");
+  if (b && b.brightColor) root.style.setProperty("--brand-bright", b.brightColor);
+  else root.style.removeProperty("--brand-bright");
+}
+async function switchActiveTenant(tenantId){
+  state.activeTenantId = tenantId;
+  await loadActiveTenantConfig();
+  await loadAll();
+}
+
 async function initAuth(){
   const { data } = await sb.auth.getSession();
   state.session = data.session;
   state.authChecked = true;
   render();
-  if (state.session) await loadAll();
+  if (state.session){ await loadTenantContext(); await loadAll(); }
   sb.auth.onAuthStateChange((event, session) => {
     const hadSession = !!state.session;
     state.session = session;
-    if (session && !hadSession){ render(); loadAll(); }
+    if (session && !hadSession){ render(); loadTenantContext().then(loadAll); }
     else if (!session && hadSession){ state.loaded = false; render(); }
   });
 }
@@ -585,13 +626,14 @@ async function fetchAllRows(table, applyFilters, selectCols){
 }
 
 async function loadAll(){
+  const tid = state.activeTenantId;
   const [aRes, sRes, cRes, oRes, iRes, bRes] = await Promise.all([
-    sb.from("articles").select("*").is("deleted_at", null).order("name"),
-    sb.from("stock_units").select("*").is("deleted_at", null),
-    sb.from("customers").select("*").is("deleted_at", null).order("name"),
-    sb.from("orders").select("*").is("deleted_at", null).order("created_at", {ascending:false}),
-    fetchAllRows("incoming_shipments", q => q.is("deleted_at", null)),
-    sb.from("shipment_batches").select("*"),
+    sb.from("articles").select("*").is("deleted_at", null).eq("tenant_id", tid).order("name"),
+    sb.from("stock_units").select("*").is("deleted_at", null).eq("tenant_id", tid),
+    sb.from("customers").select("*").is("deleted_at", null).eq("tenant_id", tid).order("name"),
+    sb.from("orders").select("*").is("deleted_at", null).eq("tenant_id", tid).order("created_at", {ascending:false}),
+    fetchAllRows("incoming_shipments", q => q.is("deleted_at", null).eq("tenant_id", tid)),
+    sb.from("shipment_batches").select("*").eq("tenant_id", tid),
   ]);
   [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes],["incoming_shipments",iRes],["shipment_batches",bRes]].forEach(([label,res])=>{
     if (res.error){ console.error(`load ${label} error`, res.error); showToast(`Σφάλμα φόρτωσης (${label}): ${res.error.message}`); }
@@ -606,12 +648,13 @@ async function loadAll(){
   render();
 }
 async function loadTrash(){
+  const tid = state.activeTenantId;
   const [aRes, sRes, cRes, oRes, iRes] = await Promise.all([
-    sb.from("articles").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
-    sb.from("stock_units").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
-    sb.from("customers").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
-    sb.from("orders").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false}),
-    fetchAllRows("incoming_shipments", q => q.not("deleted_at","is",null), "shipment_ref, deleted_at"),
+    sb.from("articles").select("*").not("deleted_at","is",null).eq("tenant_id", tid).order("deleted_at",{ascending:false}),
+    sb.from("stock_units").select("*").not("deleted_at","is",null).eq("tenant_id", tid).order("deleted_at",{ascending:false}),
+    sb.from("customers").select("*").not("deleted_at","is",null).eq("tenant_id", tid).order("deleted_at",{ascending:false}),
+    sb.from("orders").select("*").not("deleted_at","is",null).eq("tenant_id", tid).order("deleted_at",{ascending:false}),
+    fetchAllRows("incoming_shipments", q => q.not("deleted_at","is",null).eq("tenant_id", tid), "shipment_ref, deleted_at"),
   ]);
   // Ομαδοποίηση διαγραμμένων γραμμών αποστολής σε ένα στοιχείο ανά shipment_ref
   const shipmentMap = {};
@@ -1252,6 +1295,14 @@ function exportStockPDF(){
 /* ---------------- render ---------------- */
 function brandBlockHTML(size){
   const s = size || 34;
+  const b = (state.tenantConfig && state.tenantConfig.branding) || null;
+  if (b && b.logoDataUri){
+    return `
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <img src="${b.logoDataUri}" alt="${esc(b.companyName||"")}" style="height:${s}px;max-width:170px;object-fit:contain;object-position:left;" />
+        <span style="font-size:9px;color:var(--muted2);letter-spacing:0.3px;">Powered by Taksis®</span>
+      </div>`;
+  }
   return `
     <svg viewBox="0 0 120 120" width="${s}" height="${s}" xmlns="http://www.w3.org/2000/svg">
       <defs><path id="hdricon" d="M 12,67 A 48,48 0 0,0 108,67"/></defs>
@@ -1336,6 +1387,14 @@ function render(){
           <button id="langToggleBtn" class="btn" style="padding:5px 10px;font-size:11px;">${t("lang_switch")}</button>
         </div>
         <div class="sidebar-module">${t("module_tag")}</div>
+        ${state.tenantRole === "admin" && state.availableTenants.length>0 ? `
+          <div style="margin:6px 0 10px;">
+            <label style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted2);">${state.lang==='en'?'Viewing as':'Προβολή ως'}</label>
+            <select id="tenantSwitcher" style="font-size:12px;padding:6px 8px;">
+              ${state.availableTenants.map(tn=>`<option value="${tn.id}" ${state.activeTenantId===tn.id?'selected':''}>${esc(tn.name)}</option>`).join("")}
+            </select>
+          </div>
+        ` : ""}
         <nav class="sidebar-nav">
           ${tabs.map(([id,label])=>`<button data-tab="${id}" class="${state.tab===id?'active':''}">${TAB_ICONS[id]||""}<span>${label}</span></button>`).join("")}
         </nav>
@@ -1705,7 +1764,7 @@ async function submitOrder(){
     items.push({sscc, article_code: su.article_code, article_name: a?.name||su.article_code, lot_code: su.lot_code, bbd: su.bbd, qty, weight, price: a?.price||0, price_per_kg: pricePerKg, value: weight*pricePerKg});
   }
   if (items.length===0) return showToast(t("toast_add_products"));
-  const order = {id: uid(), date: todayISO(), customer_id: state.customerId, items, created_at: new Date().toISOString()};
+  const order = {id: uid(), date: todayISO(), customer_id: state.customerId, items, created_at: new Date().toISOString(), tenant_id: state.activeTenantId};
   const {data: insertedRows, error: orderErr} = await sb.from("orders").insert(order).select();
   if (orderErr) return showToast(`Σφάλμα αποθήκευσης παραγγελίας: ${orderErr.message}`);
   const orderNo = insertedRows && insertedRows[0] ? insertedRows[0].order_number : null;
@@ -2978,6 +3037,8 @@ function bindEvents(){
   if (logoutBtn) logoutBtn.onclick = logout;
   const logoutBtnMobile = document.getElementById("logoutBtnMobile");
   if (logoutBtnMobile) logoutBtnMobile.onclick = logout;
+  const tenantSwitcher = document.getElementById("tenantSwitcher");
+  if (tenantSwitcher) tenantSwitcher.onchange = e => switchActiveTenant(e.target.value);
 
   root.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
     const targetTab = b.dataset.tab;
@@ -3232,6 +3293,7 @@ function bindEvents(){
       lot_code: document.getElementById("l_lot").value.trim(),
       bbd: document.getElementById("l_bbd").value || null,
       reference: document.getElementById("l_reference").value.trim(),
+      tenant_id: state.activeTenantId,
     };
     const {error} = await sb.from("stock_units").upsert(rec, {onConflict:"sscc"});
     if (error) return showToast(`Σφάλμα: ${error.message}`);
@@ -3526,7 +3588,7 @@ async function saveArticle(){
   if (!f.code || !f.name) return showToast(t("toast_code_name_required"));
   const clean = {code:f.code, name:f.name, price:toNumber(f.price), price_per_kg:toNumber(f.price_per_kg), custom:f.custom||{}};
   if (f.isNew){
-    const {error} = await sb.from("articles").insert(clean);
+    const {error} = await sb.from("articles").insert({...clean, tenant_id: state.activeTenantId});
     if (error) return showToast(error.code==="23505" ? "Ο κωδικός υπάρχει ήδη" : `Σφάλμα: ${error.message}`);
   } else {
     const {error} = await sb.from("articles").update(clean).eq("code", f._origCode);
@@ -3563,7 +3625,7 @@ async function saveCustomer(){
     delivery_country: sameAsBilling ? "" : document.getElementById("c_delivery_country").value.trim(),
   };
   if (!clean.name) return showToast(t("toast_name_required"));
-  const {error} = c.isNew ? await sb.from("customers").insert(clean) : await sb.from("customers").update(clean).eq("id", c.id);
+  const {error} = c.isNew ? await sb.from("customers").insert({...clean, tenant_id: state.activeTenantId}) : await sb.from("customers").update(clean).eq("id", c.id);
   if (error) return showToast(`Σφάλμα: ${error.message}`);
   state.editingCustomer = null;
   await loadAll();
@@ -3635,7 +3697,7 @@ async function importIncomingShipment(file){
     // Chunk insert για αποφυγή υπερβολικά μεγάλου request
     const CHUNK = 300;
     for (let i=0;i<records.length;i+=CHUNK){
-      const chunk = records.slice(i, i+CHUNK);
+      const chunk = records.slice(i, i+CHUNK).map(r=>({...r, tenant_id: state.activeTenantId}));
       const {error} = await sb.from("incoming_shipments").insert(chunk);
       if (error){ console.error("incoming import error", error); showToast(`Σφάλμα: ${error.message}`); state.incomingImporting=false; render(); return; }
     }
@@ -3703,7 +3765,7 @@ function groupIncomingByBatch(){
 }
 
 async function setBatchExpectedArrival(batch, dateValue){
-  const {error} = await sb.from("shipment_batches").upsert({batch, expected_arrival: dateValue || null, updated_at: new Date().toISOString()}, {onConflict:"batch"});
+  const {error} = await sb.from("shipment_batches").upsert({batch, tenant_id: state.activeTenantId, expected_arrival: dateValue || null, updated_at: new Date().toISOString()}, {onConflict:"tenant_id,batch"});
   if (error){ showToast(`Σφάλμα: ${error.message}`); return; }
   const existing = state.shipmentBatches.find(x=>x.batch===batch);
   if (existing) existing.expected_arrival = dateValue || null;
@@ -3721,7 +3783,7 @@ async function markGroupReceived(group, opts){
   // Αν ο κωδικός δεν υπάρχει ακόμα ως είδος, δημιούργησέ τον
   const existingArticle = state.articles.find(a=>a.code===group.code);
   if (!existingArticle){
-    const {error: artErr} = await sb.from("articles").upsert({code: group.code, name: group.name || group.code}, {onConflict:"code"});
+    const {error: artErr} = await sb.from("articles").upsert({code: group.code, name: group.name || group.code, tenant_id: state.activeTenantId}, {onConflict:"code"});
     if (artErr){ showToast(`Σφάλμα: ${artErr.message}`); return; }
   }
 
@@ -3736,6 +3798,7 @@ async function markGroupReceived(group, opts){
     lot_code: lotCode,
     bbd: group.fechaVen || null,
     reference: shipmentRefs,
+    tenant_id: state.activeTenantId,
   };
   const {error: lotErr} = await sb.from("stock_units").insert(newLot);
   if (lotErr){ showToast(`Σφάλμα: ${lotErr.message}`); return; }
@@ -3813,7 +3876,7 @@ async function doImportStock(){
   });
   let artErrors = 0;
   for (const [code,name] of Object.entries(articleMap)){
-    const payload = {code, name};
+    const payload = {code, name, tenant_id: state.activeTenantId};
     if (priceMap[code] !== undefined) payload.price_per_kg = priceMap[code];
     const {error} = await sb.from("articles").upsert(payload, {onConflict:"code"});
     if (error){ console.error("article upsert error", code, error); artErrors++; }
@@ -3832,6 +3895,7 @@ async function doImportStock(){
       bbd: parseDateFlexible(r.bbd),
       reference: r.reference || "",
       custom: r.custom || {},
+      tenant_id: state.activeTenantId,
     };
     const {error} = await sb.from("stock_units").upsert(rec, {onConflict:"sscc"});
     if (error){ console.error("stock upsert error", rec.sscc, error); lotErrors++; lastError = error; }
@@ -3869,6 +3933,7 @@ async function doImportCustomers(){
       commercial_name: r.commercialname||"", address: r.address||"", area: r.area||"",
       zip: r.zip||"", city: r.city||"", country: r.country||"",
       phone, fax, email: r.email||"", email2: r.email2||"", notes: r.notes||"",
+      tenant_id: state.activeTenantId,
     };
   });
 
