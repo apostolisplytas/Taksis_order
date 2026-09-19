@@ -940,6 +940,31 @@ function exportLogifrioXLSX(order){
   XLSX.writeFile(wb, filename);
 }
 
+// Εξαγωγή μιας παραγγελίας σε template για τη Serviroad (.xlsx)
+// Στήλες: SSCC, Article Code, Description, Boxes, Weight (kg) — μία γραμμή ανά lot, με σύνολο στο τέλος
+function exportServiroadXLSX(order){
+  if (!window.XLSX) return showToast("Η βιβλιοθήκη Excel δεν φορτώθηκε — έλεγξε τη σύνδεση internet");
+  const c = state.customers.find(x=>x.id===order.customer_id);
+  const customerName = c ? c.name : "Customer";
+
+  const header = ["SSCC","Article Code","Description","Boxes","Weight (kg)"];
+  const rows = order.items.map(i=>[i.sscc||"", i.article_code, i.article_name, i.qty, Number(i.weight||0).toFixed(2)]);
+  const totalBoxes = order.items.reduce((s,i)=>s+(i.qty||0),0);
+  const totalWeight = order.items.reduce((s,i)=>s+(Number(i.weight)||0),0);
+  rows.push(["", "", "TOTAL", totalBoxes, totalWeight.toFixed(2)]);
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Order");
+
+  const orderDate = new Date(order.date + "T00:00:00");
+  const dd = String(orderDate.getDate()).padStart(2,"0");
+  const mm = String(orderDate.getMonth()+1).padStart(2,"0");
+
+  const filename = `Serviroad_New_order_${sanitizeForFilename(customerName)}_${dd}_${mm}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
 function exportDeliverySlipPDF(order){
   if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
@@ -1555,7 +1580,11 @@ function naturalCodeSort(a,b){
 function renderOrders(){
   const orderUnits = filterUnitsByWarehouse(state.stockUnits, state.orderWarehouseId);
   const needsWarehousePick = state.warehouses.length>0 && !state.orderWarehouseId;
-  const filtered = state.articles.filter(a => !state.search || a.name.toLowerCase().includes(state.search.toLowerCase()) || a.code.toLowerCase().includes(state.search.toLowerCase()));
+  let filtered = state.articles.filter(a => !state.search || a.name.toLowerCase().includes(state.search.toLowerCase()) || a.code.toLowerCase().includes(state.search.toLowerCase()));
+  if (state.orderWarehouseId) filtered = filtered.filter(a=>{
+    const tot = articleTotals(a.code, orderUnits);
+    return tot.boxes>0 || tot.weight>0;
+  });
   const editingOrderNumber = state.editingOrderId ? (state.orders.find(o=>o.id===state.editingOrderId)?.order_number || "") : "";
   const cartEntries = Object.entries(state.cart).filter(([,q])=>q>0);
   const cartByArticle = {}; // code -> {name, boxes, weight, value}
@@ -2400,7 +2429,11 @@ function renderOrderCard(o, showDate){
         </select>
         <button class="btn" data-editorder="${o.id}" style="font-size:12px;padding:6px 10px;">${t("edit_order")}</button>
         <button class="btn" data-deliveryslip="${o.id}" style="font-size:12px;padding:6px 10px;">${t("delivery_slip")}</button>
-        <button class="btn" data-logifrio="${o.id}" style="font-size:12px;padding:6px 10px;">⇩ Logifrio template</button>
+        ${(() => {
+          const whName = o.warehouse_id ? warehouseName(o.warehouse_id) : "";
+          if (whName.toLowerCase().includes("serviroad")) return `<button class="btn" data-serviroad="${o.id}" style="font-size:12px;padding:6px 10px;">⇩ Serviroad template</button>`;
+          return `<button class="btn" data-logifrio="${o.id}" style="font-size:12px;padding:6px 10px;">⇩ Logifrio template</button>`;
+        })()}
       </div>
     </div>
   `;
@@ -2884,6 +2917,10 @@ function renderStock(){
     let sorted = state.stockFilterCodes.size>0
       ? state.articles.filter(a=>state.stockFilterCodes.has(a.code))
       : state.articles.filter(a=>!q || a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
+    if (state.stockFilterWarehouse) sorted = sorted.filter(a=>{
+      const tot = articleTotals(a.code, stockUnitsForView);
+      return tot.boxes>0 || tot.weight>0;
+    });
     sorted = state.stockView==="product"
       ? sorted.sort((a,b)=>a.name.localeCompare(b.name,'el'))
       : sorted.sort((a,b)=>naturalCodeSort(a.code,b.code));
@@ -2911,7 +2948,15 @@ function renderStock(){
       ${state.stockFilterCategories.size>0 ? `<button class="btn link" id="clearCategoryFilterBtn" style="padding:0;margin-top:6px;">${t("clear")}</button>` : ""}
     `;
     const activeKeys = state.stockFilterCategories.size>0 ? allKeysOrdered.filter(k=>state.stockFilterCategories.has(k)) : allKeysOrdered;
-    const groups = {}; activeKeys.forEach(k=>groups[k]=allGroups[k]||[]);
+    const groups = {};
+    activeKeys.forEach(k=>{
+      let arts = allGroups[k]||[];
+      if (state.stockFilterWarehouse) arts = arts.filter(a=>{
+        const tot = articleTotals(a.code, stockUnitsForView);
+        return tot.boxes>0 || tot.weight>0;
+      });
+      groups[k] = arts;
+    });
     visibleCodes = Object.values(groups).flat().map(a=>a.code);
     sub = subtotalOf(Object.values(groups).flat());
     listHTML = visibleCodes.length===0 ? `<p class="center-note">${t("no_items_category")}</p>` : activeKeys.map(key=>{
@@ -3704,6 +3749,10 @@ function bindEvents(){
   root.querySelectorAll("[data-deliveryslip]").forEach(b=>b.onclick=()=>{
     const order = state.orders.find(o=>o.id===b.dataset.deliveryslip);
     if (order) exportDeliverySlipPDF(order);
+  });
+  root.querySelectorAll("[data-serviroad]").forEach(b=>b.onclick=()=>{
+    const order = state.orders.find(o=>o.id===b.dataset.serviroad);
+    if (order) exportServiroadXLSX(order);
   });
   root.querySelectorAll("[data-logifrio]").forEach(b=>b.onclick=()=>{
     const order = state.orders.find(o=>o.id===b.dataset.logifrio);
