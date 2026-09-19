@@ -522,6 +522,10 @@ let state = {
   trash: {articles:[], stockUnits:[], customers:[], orders:[], shipments:[]},
   incomingShipments: [], incomingView: "product", incomingSearch: "", shipmentBatches: [],
   showImportIncoming: false, incomingImporting: false, expandedIncomingGroups: new Set(),
+  warehouses: [], blockedArticles: [],
+  stockFilterWarehouse: "", orderWarehouseId: "", importWarehouseId: "",
+  editingWarehouse: null, showWarehouseManager: false,
+  blockPickerCode: "",
 };
 
 function bindLoginEvents(){
@@ -589,6 +593,7 @@ function applyTenantBranding(){
 }
 async function switchActiveTenant(tenantId){
   state.activeTenantId = tenantId;
+  state.orderWarehouseId = ""; state.importWarehouseId = ""; state.stockFilterWarehouse = "";
   await loadActiveTenantConfig();
   await loadAll();
 }
@@ -627,15 +632,17 @@ async function fetchAllRows(table, applyFilters, selectCols){
 
 async function loadAll(){
   const tid = state.activeTenantId;
-  const [aRes, sRes, cRes, oRes, iRes, bRes] = await Promise.all([
+  const [aRes, sRes, cRes, oRes, iRes, bRes, wRes, blRes] = await Promise.all([
     sb.from("articles").select("*").is("deleted_at", null).eq("tenant_id", tid).order("name"),
     sb.from("stock_units").select("*").is("deleted_at", null).eq("tenant_id", tid),
     sb.from("customers").select("*").is("deleted_at", null).eq("tenant_id", tid).order("name"),
     sb.from("orders").select("*").is("deleted_at", null).eq("tenant_id", tid).order("created_at", {ascending:false}),
     fetchAllRows("incoming_shipments", q => q.is("deleted_at", null).eq("tenant_id", tid)),
     sb.from("shipment_batches").select("*").eq("tenant_id", tid),
+    sb.from("warehouses").select("*").is("deleted_at", null).eq("tenant_id", tid).order("name"),
+    sb.from("customer_blocked_articles").select("*").eq("tenant_id", tid),
   ]);
-  [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes],["incoming_shipments",iRes],["shipment_batches",bRes]].forEach(([label,res])=>{
+  [["articles",aRes],["stock_units",sRes],["customers",cRes],["orders",oRes],["incoming_shipments",iRes],["shipment_batches",bRes],["warehouses",wRes],["customer_blocked_articles",blRes]].forEach(([label,res])=>{
     if (res.error){ console.error(`load ${label} error`, res.error); showToast(`Σφάλμα φόρτωσης (${label}): ${res.error.message}`); }
   });
   state.articles = aRes.data || [];
@@ -644,6 +651,10 @@ async function loadAll(){
   state.orders = oRes.data || [];
   state.incomingShipments = iRes.data || [];
   state.shipmentBatches = bRes.data || [];
+  state.warehouses = wRes.data || [];
+  state.blockedArticles = blRes.data || [];
+  if (!state.orderWarehouseId && state.warehouses.length>0) state.orderWarehouseId = state.warehouses[0].id;
+  if (!state.importWarehouseId && state.warehouses.length>0) state.importWarehouseId = state.warehouses[0].id;
   state.loaded = true;
   render();
 }
@@ -1450,13 +1461,59 @@ function computeQuickStats(){
   const expiring = state.stockUnits.filter(u=>u.bbd && daysUntil(u.bbd)<=EXPIRY_WARNING_DAYS && (u.volume_boxes>0||u.weight_kg>0)).length;
   return {ordersToday, lowStock, expiring};
 }
-function articleTotals(code){
-  const lots = state.stockUnits.filter(su=>su.article_code===code);
+function articleTotals(code, unitsOverride){
+  const units = unitsOverride || state.stockUnits;
+  const lots = units.filter(su=>su.article_code===code);
   return {
     lots,
     boxes: lots.reduce((s,l)=>s+(Number(l.volume_boxes)||0),0),
     weight: lots.reduce((s,l)=>s+(Number(l.weight_kg)||0),0),
   };
+}
+function filterUnitsByWarehouse(units, warehouseId){
+  return warehouseId ? units.filter(u=>u.warehouse_id===warehouseId) : units;
+}
+function warehouseName(id){
+  const w = state.warehouses.find(x=>x.id===id);
+  return w ? w.name : (state.lang==='en'?'(unknown warehouse)':'(άγνωστη αποθήκη)');
+}
+function isArticleBlockedForCustomer(customerId, code){
+  return state.blockedArticles.some(b=>b.customer_id===customerId && b.article_code===code);
+}
+async function toggleBlockArticle(customerId, code){
+  const existing = state.blockedArticles.find(b=>b.customer_id===customerId && b.article_code===code);
+  if (existing){
+    const {error} = await sb.from("customer_blocked_articles").delete().eq("id", existing.id);
+    if (error) return showToast(`Σφάλμα: ${error.message}`);
+  } else {
+    const {error} = await sb.from("customer_blocked_articles").insert({customer_id: customerId, article_code: code, tenant_id: state.activeTenantId});
+    if (error) return showToast(`Σφάλμα: ${error.message}`);
+  }
+  await loadAll();
+}
+async function saveWarehouse(){
+  const w = state.editingWarehouse;
+  if (!w) return;
+  const name = (document.getElementById("wh_name")||{}).value?.trim();
+  const code = (document.getElementById("wh_code")||{}).value?.trim() || null;
+  if (!name) return showToast(state.lang==='en'?'Name required':'Απαιτείται όνομα');
+  const rec = {name, code, tenant_id: state.activeTenantId};
+  let error;
+  if (w.isNew){
+    ({error} = await sb.from("warehouses").insert(rec));
+  } else {
+    ({error} = await sb.from("warehouses").update(rec).eq("id", w.id));
+  }
+  if (error) return showToast(`Σφάλμα: ${error.message}`);
+  state.editingWarehouse = null;
+  await loadAll();
+  showToast(state.lang==='en'?'Warehouse saved':'Η αποθήκη αποθηκεύτηκε');
+}
+async function deleteWarehouse(id){
+  if (!confirm(state.lang==='en'?'Delete this warehouse? Existing stock will keep pointing to it.':'Διαγραφή αυτής της αποθήκης; Το υπάρχον απόθεμα θα συνεχίσει να δείχνει σε αυτήν.')) return;
+  const {error} = await sb.from("warehouses").update({deleted_at: new Date().toISOString()}).eq("id", id);
+  if (error) return showToast(`Σφάλμα: ${error.message}`);
+  await loadAll();
 }
 
 // Κατηγοριοποίηση με βάση τον κωδικό είδους:
@@ -1496,6 +1553,8 @@ function naturalCodeSort(a,b){
 
 /* ---------------- ORDERS TAB ---------------- */
 function renderOrders(){
+  const orderUnits = filterUnitsByWarehouse(state.stockUnits, state.orderWarehouseId);
+  const needsWarehousePick = state.warehouses.length>0 && !state.orderWarehouseId;
   const filtered = state.articles.filter(a => !state.search || a.name.toLowerCase().includes(state.search.toLowerCase()) || a.code.toLowerCase().includes(state.search.toLowerCase()));
   const editingOrderNumber = state.editingOrderId ? (state.orders.find(o=>o.id===state.editingOrderId)?.order_number || "") : "";
   const cartEntries = Object.entries(state.cart).filter(([,q])=>q>0);
@@ -1534,6 +1593,18 @@ function renderOrders(){
         </select>
       </div>
 
+      ${state.warehouses.length>0 ? `
+        <div>
+          <label>${state.lang==='en'?'Warehouse':'Αποθήκη'}</label>
+          <select id="orderWarehouseSelect">
+            <option value="">${state.lang==='en'?'Select warehouse…':'Επίλεξε αποθήκη…'}</option>
+            ${state.warehouses.map(w=>`<option value="${w.id}" ${state.orderWarehouseId===w.id?'selected':''}>${esc(w.name)}</option>`).join("")}
+          </select>
+        </div>
+      ` : ""}
+
+      ${needsWarehousePick ? `<p class="center-note">${state.lang==='en'?'Select a warehouse above to see available products.':'Επίλεξε αποθήκη παραπάνω για να δεις τα διαθέσιμα προϊόντα.'}</p>` : `
+
       <div class="card" style="border-color:var(--brand);">
         <div class="row" style="cursor:pointer;" data-togglequickorder="1">
           <div>
@@ -1555,10 +1626,22 @@ function renderOrders(){
       <div class="stack" style="gap:6px;">
         ${filtered.length===0 ? `<p class="center-note">${state.articles.length===0?t("no_articles"):t("no_results")}</p>` : ""}
         ${filtered.map(a=>{
-          const {lots, boxes, weight} = articleTotals(a.code);
+          const {lots, boxes, weight} = articleTotals(a.code, orderUnits);
           const expanded = state.expandedArticle === a.code;
           const availLots = lots.filter(l=>(l.volume_boxes||0) > 0).sort((x,y)=>(x.bbd||"9999").localeCompare(y.bbd||"9999"));
           const inCart = cartByArticle[a.code];
+          const isBlocked = state.customerId && isArticleBlockedForCustomer(state.customerId, a.code);
+          if (isBlocked){
+            return `
+          <div class="card" style="opacity:0.55;">
+            <div class="row">
+              <div style="min-width:0;">
+                <div style="font-size:14px;font-weight:500;">${esc(a.name)} <span class="badge" style="background:rgba(220,60,60,0.18);color:var(--red);">🚫 ${state.lang==='en'?'Blocked':'Μπλοκαρισμένο'}</span></div>
+                <div class="muted">${esc(a.code)}</div>
+              </div>
+            </div>
+          </div>`;
+          }
           return `
           <div class="card${inCart?' in-cart':''}">
             <div class="row" style="cursor:pointer;" data-togglearticle="${a.code}">
@@ -1616,6 +1699,7 @@ function renderOrders(){
           </div>
           <button class="btn btn-primary" id="submitOrderBtn" style="width:100%;padding:12px;">${state.editingOrderId ? t("save_order_changes") : t("submit_order")}</button>
         </div>` : ""}
+      `}
     </div>
   `;
 }
@@ -1624,7 +1708,7 @@ function renderOrders(){
 // ενός κωδικού, και προσθέτει την κατανομή στο state.cart. Σέβεται ό,τι είναι ήδη στο καλάθι.
 // Επιστρέφει {added, requested, fulfilled} για ενημέρωση του χρήστη.
 function allocateFEFO(articleCode, requestedBoxes){
-  const lots = state.stockUnits
+  const lots = filterUnitsByWarehouse(state.stockUnits, state.orderWarehouseId)
     .filter(u=>u.article_code===articleCode && (u.volume_boxes||0) > 0)
     .sort((a,b)=>(a.bbd||"9999-99-99").localeCompare(b.bbd||"9999-99-99"));
   let remaining = requestedBoxes;
@@ -1655,6 +1739,7 @@ function applyQuickOrder(){
     if (!qty || qty <= 0){ problems.push(`Μη έγκυρη ποσότητα: "${line}"`); return; }
     const article = state.articles.find(a=>a.code===code);
     if (!article){ problems.push(`Άγνωστος κωδικός: ${code}`); return; }
+    if (state.customerId && isArticleBlockedForCustomer(state.customerId, code)){ problems.push(`${article.name}: ${state.lang==='en'?'blocked for this customer':'μπλοκαρισμένο για αυτόν τον πελάτη'}`); return; }
     const { requested, fulfilled } = allocateFEFO(code, qty);
     if (fulfilled < requested) problems.push(`${article.name}: ζητήθηκαν ${requested}, βρέθηκαν μόνο ${fulfilled} διαθέσιμα κιβώτια`);
     touchedCount++;
@@ -1683,6 +1768,7 @@ async function startEditOrder(orderId){
   state.editingOrderId = orderId;
   state.editingOrderOriginalItems = JSON.parse(JSON.stringify(order.items || []));
   state.customerId = order.customer_id;
+  if (order.warehouse_id) state.orderWarehouseId = order.warehouse_id;
   state.cart = {};
   state.cartPrices = {};
   (order.items||[]).forEach(it=>{
@@ -1720,6 +1806,7 @@ async function saveOrderEdits(){
   for (const [sscc, qty] of cartEntries){
     const su = state.stockUnits.find(x=>x.sscc===sscc);
     if (!su) continue;
+    if (isArticleBlockedForCustomer(state.customerId, su.article_code)) return showToast(`${state.lang==='en'?'Blocked for this customer':'Μπλοκαρισμένο για αυτόν τον πελάτη'}: ${su.article_code}`);
     if (qty > su.volume_boxes) return showToast(`Ανεπαρκές απόθεμα στο lot ${su.lot_code||sscc}`);
     const a = state.articles.find(x=>x.code===su.article_code);
     const ratio = su.volume_boxes > 0 ? (su.weight_kg / su.volume_boxes) : 0;
@@ -1730,7 +1817,9 @@ async function saveOrderEdits(){
   if (items.length===0) return showToast(t("toast_add_products"));
 
   const orderId = state.editingOrderId;
-  const {error: updErr} = await sb.from("orders").update({items, customer_id: state.customerId}).eq("id", orderId);
+  const updatePayload = {items, customer_id: state.customerId};
+  if (state.orderWarehouseId) updatePayload.warehouse_id = state.orderWarehouseId;
+  const {error: updErr} = await sb.from("orders").update(updatePayload).eq("id", orderId);
   if (updErr) return showToast(`Σφάλμα: ${updErr.message}`);
 
   for (const it of items){
@@ -1750,12 +1839,14 @@ async function saveOrderEdits(){
 
 async function submitOrder(){
   if (!state.customerId) return showToast(t("toast_select_customer"));
+  if (state.warehouses.length>0 && !state.orderWarehouseId) return showToast(state.lang==='en'?'Select a warehouse first':'Επίλεξε πρώτα αποθήκη');
   const cartEntries = Object.entries(state.cart).filter(([,q])=>q>0);
   if (cartEntries.length===0) return showToast(t("toast_add_products"));
   const items = [];
   for (const [sscc, qty] of cartEntries){
     const su = state.stockUnits.find(x=>x.sscc===sscc);
     if (!su) continue;
+    if (isArticleBlockedForCustomer(state.customerId, su.article_code)) return showToast(`${state.lang==='en'?'Blocked for this customer':'Μπλοκαρισμένο για αυτόν τον πελάτη'}: ${su.article_code}`);
     if (qty > su.volume_boxes) return showToast(`Ανεπαρκές απόθεμα στο lot ${su.lot_code||sscc}`);
     const a = state.articles.find(x=>x.code===su.article_code);
     const ratio = su.volume_boxes > 0 ? (su.weight_kg / su.volume_boxes) : 0;
@@ -1764,7 +1855,7 @@ async function submitOrder(){
     items.push({sscc, article_code: su.article_code, article_name: a?.name||su.article_code, lot_code: su.lot_code, bbd: su.bbd, qty, weight, price: a?.price||0, price_per_kg: pricePerKg, value: weight*pricePerKg});
   }
   if (items.length===0) return showToast(t("toast_add_products"));
-  const order = {id: uid(), date: todayISO(), customer_id: state.customerId, items, created_at: new Date().toISOString(), tenant_id: state.activeTenantId};
+  const order = {id: uid(), date: todayISO(), customer_id: state.customerId, items, created_at: new Date().toISOString(), tenant_id: state.activeTenantId, warehouse_id: state.orderWarehouseId || null};
   const {data: insertedRows, error: orderErr} = await sb.from("orders").insert(order).select();
   if (orderErr) return showToast(`Σφάλμα αποθήκευσης παραγγελίας: ${orderErr.message}`);
   const orderNo = insertedRows && insertedRows[0] ? insertedRows[0].order_number : null;
@@ -1854,12 +1945,54 @@ function renderArticles(){
   `;
 }
 
+function renderWarehouseManager(){
+  const w = state.editingWarehouse;
+  return `
+    <div style="margin-top:10px;border-top:1px solid var(--border2);padding-top:10px;">
+      <div class="stack" style="gap:6px;margin-bottom:10px;">
+        ${state.warehouses.length===0 ? `<p class="muted" style="margin:0;">${state.lang==='en'?'No warehouses yet.':'Δεν υπάρχουν ακόμα αποθήκες.'}</p>` : state.warehouses.map(wh=>`
+          <div class="card row">
+            <div>
+              <div style="font-size:13px;">${esc(wh.name)}</div>
+              ${wh.code?`<div class="muted">${esc(wh.code)}</div>`:""}
+            </div>
+            <div style="display:flex;gap:10px;">
+              <button class="btn link" data-editwh="${wh.id}" style="padding:0;">${t("edit")}</button>
+              <button class="btn link" data-delwh="${wh.id}" style="padding:0;color:var(--red);">${state.lang==='en'?'Delete':'Διαγραφή'}</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+      ${w ? `
+        <div class="grid2" style="row-gap:10px;">
+          <div><label>${state.lang==='en'?'Name':'Όνομα'}</label><input id="wh_name" placeholder="${state.lang==='en'?'e.g. Coldstore A':'π.χ. Ψυγείο Α'}" value="${esc(w.name||"")}" /></div>
+          <div><label>${state.lang==='en'?'Code (optional)':'Κωδικός (προαιρετικό)'}</label><input id="wh_code" placeholder="e.g. WH1" value="${esc(w.code||"")}" /></div>
+        </div>
+        <div class="row" style="margin-top:8px;justify-content:flex-start;gap:8px;">
+          <button class="btn btn-primary" id="saveWarehouseBtn">${t("save")}</button>
+          <button class="btn link" id="cancelWarehouseBtn">${t("cancel")}</button>
+        </div>
+      ` : `
+        <button class="btn" id="addWarehouseBtn">${state.lang==='en'?'+ New warehouse':'+ Νέα αποθήκη'}</button>
+      `}
+    </div>
+  `;
+}
+
 function renderStockImportBox(){
   return `
     <div class="card" style="border-color:var(--border2);">
       <p class="muted" style="line-height:1.6;margin:0 0 8px;">
         ${t("import_stock_hint")}
       </p>
+      ${state.warehouses.length>0 ? `
+        <div style="margin-bottom:8px;">
+          <label>${state.lang==='en'?'Import into warehouse':'Εισαγωγή στην αποθήκη'}</label>
+          <select id="importWarehouseSelect">
+            ${state.warehouses.map(w=>`<option value="${w.id}" ${state.importWarehouseId===w.id?'selected':''}>${esc(w.name)}</option>`).join("")}
+          </select>
+        </div>
+      ` : `<p class="muted" style="margin:0 0 8px;color:var(--amber-bright);">${state.lang==='en'?'No warehouses set up yet — add one first in the Stock Summary tab.':'Δεν έχουν οριστεί αποθήκες — πρόσθεσε πρώτα μία από την οθόνη Σύνοψη Stock.'}</p>`}
       <div class="row" style="justify-content:flex-start;gap:8px;margin-bottom:8px;">
         <input type="file" id="importFile" accept=".csv,.tsv,.txt" style="width:auto;padding:6px;font-size:12px;" />
       </div>
@@ -1913,6 +2046,13 @@ function renderLotForm(articleCode){
         <div><label>${t("kg")}</label><input id="l_weight" type="number" step="0.01" placeholder="0" value="0" /></div>
         <div><label>${t("lot_code_label")}</label><input id="l_lot" placeholder="e.g. 06/05/2026" /></div>
         <div><label>${t("bbd_label")}</label><input id="l_bbd" type="date" /></div>
+        ${state.warehouses.length>0 ? `
+          <div><label>${state.lang==='en'?'Warehouse':'Αποθήκη'}</label>
+            <select id="l_warehouse">
+              ${state.warehouses.map(w=>`<option value="${w.id}" ${state.importWarehouseId===w.id?'selected':''}>${esc(w.name)}</option>`).join("")}
+            </select>
+          </div>
+        ` : ""}
         <div style="grid-column:1/3;"><label>${t("reference_label")}</label><input id="l_reference" placeholder="${state.lang==='en'?'Optional':'Προαιρετικό'}" /></div>
       </div>
       <div class="row" style="margin-top:8px;justify-content:flex-start;gap:8px;">
@@ -2088,6 +2228,33 @@ function renderCustomerDetail(customerId){
         </div>
       </div>
 
+      <div class="card">
+        <div class="row" style="margin-bottom:8px;">
+          <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:0;">${state.lang==='en'?'Blocked products':'Μπλοκαρισμένα προϊόντα'}</p>
+        </div>
+        ${(() => {
+          const blocked = state.blockedArticles.filter(b=>b.customer_id===customerId);
+          return `
+          <div class="stack" style="gap:6px;margin-bottom:${blocked.length?'10':'0'}px;">
+            ${blocked.length===0 ? `<p class="muted" style="margin:0;">${state.lang==='en'?'No products blocked for this customer.':'Δεν υπάρχουν μπλοκαρισμένα προϊόντα για αυτόν τον πελάτη.'}</p>` : blocked.map(b=>{
+              const a = state.articles.find(x=>x.code===b.article_code);
+              return `
+              <div class="row" style="font-size:13px;">
+                <span>🚫 ${esc(a?a.name:b.article_code)} <span class="muted2">${esc(b.article_code)}</span></span>
+                <button class="btn link" data-unblockart="${esc(b.article_code)}" data-unblockcust="${customerId}" style="padding:0;color:var(--red);">${state.lang==='en'?'Unblock':'Άρση μπλοκαρίσματος'}</button>
+              </div>`;
+            }).join("")}
+          </div>
+          <div class="row" style="gap:8px;">
+            <select id="blockArticleSelect" style="flex:1;">
+              <option value="">${state.lang==='en'?'Select a product to block…':'Επίλεξε προϊόν για μπλοκάρισμα…'}</option>
+              ${state.articles.filter(a=>!blocked.some(b=>b.article_code===a.code)).sort((a,b)=>a.name.localeCompare(b.name,'el')).map(a=>`<option value="${esc(a.code)}">${esc(a.name)} (${esc(a.code)})</option>`).join("")}
+            </select>
+            <button class="btn btn-danger-outline" id="blockArticleBtn" data-blockcust="${customerId}">${state.lang==='en'?'Block':'Μπλοκάρισμα'}</button>
+          </div>`;
+        })()}
+      </div>
+
       <div>
         <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">${t("cust_per_article")}</p>
         <div class="stack" style="gap:6px;">
@@ -2240,8 +2407,8 @@ function renderOrderCard(o, showDate){
 }
 
 /* ---------------- STOCK TAB ---------------- */
-function articleCardHTML(a){
-  const {lots, boxes, weight} = articleTotals(a.code);
+function articleCardHTML(a, unitsOverride){
+  const {lots, boxes, weight} = articleTotals(a.code, unitsOverride);
   const expanded = state.stockExpanded.has(a.code);
   const low = boxes <= 5;
   return `
@@ -2644,11 +2811,31 @@ function renderTrash(){
 }
 
 function renderStock(){
-  const totalBoxes = state.stockUnits.reduce((s,u)=>s+(Number(u.volume_boxes)||0),0);
-  const totalWeight = state.stockUnits.reduce((s,u)=>s+(Number(u.weight_kg)||0),0);
-  const totalValue = state.articles.reduce((s,a)=>{ const {weight} = articleTotals(a.code); return s + weight*(a.price_per_kg||0); },0);
-  const expiring = state.stockUnits.filter(u=>u.bbd && daysUntil(u.bbd) <= EXPIRY_WARNING_DAYS && (u.volume_boxes>0||u.weight_kg>0))
+  const stockUnitsForView = filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse);
+  const totalBoxes = stockUnitsForView.reduce((s,u)=>s+(Number(u.volume_boxes)||0),0);
+  const totalWeight = stockUnitsForView.reduce((s,u)=>s+(Number(u.weight_kg)||0),0);
+  const totalValue = state.articles.reduce((s,a)=>{ const {weight} = articleTotals(a.code, stockUnitsForView); return s + weight*(a.price_per_kg||0); },0);
+  const expiring = stockUnitsForView.filter(u=>u.bbd && daysUntil(u.bbd) <= EXPIRY_WARNING_DAYS && (u.volume_boxes>0||u.weight_kg>0))
     .sort((a,b)=>a.bbd.localeCompare(b.bbd));
+  const warehouseFilterBarHTML = state.warehouses.length>0 ? `
+    <div class="card" style="border-color:var(--border2);">
+      <div class="row" style="margin-bottom:6px;">
+        <span class="muted" style="text-transform:uppercase;letter-spacing:0.5px;">${state.lang==='en'?'Warehouse':'Αποθήκη'}</span>
+        <button class="btn link" id="toggleWarehouseManagerBtn" style="padding:0;font-size:11px;">${state.lang==='en'?'Manage warehouses':'Διαχείριση αποθηκών'}</button>
+      </div>
+      <div class="chipwrap">
+        <button type="button" class="chip ${!state.stockFilterWarehouse?'active':''}" data-whfilterchip="">${state.lang==='en'?'All warehouses':'Όλες οι αποθήκες'}</button>
+        ${state.warehouses.map(w=>`<button type="button" class="chip ${state.stockFilterWarehouse===w.id?'active':''}" data-whfilterchip="${esc(w.id)}">${esc(w.name)}</button>`).join("")}
+      </div>
+      ${state.showWarehouseManager ? renderWarehouseManager() : ""}
+    </div>
+  ` : `
+    <div class="card" style="border-color:var(--border2);">
+      <p class="muted" style="margin:0 0 8px;">${state.lang==='en'?'No warehouses set up yet.':'Δεν έχουν οριστεί ακόμα αποθήκες.'}</p>
+      <button class="btn link" id="toggleWarehouseManagerBtn" style="padding:0;">${state.lang==='en'?'Add a warehouse':'Προσθήκη αποθήκης'}</button>
+      ${state.showWarehouseManager ? renderWarehouseManager() : ""}
+    </div>
+  `;
 
   const viewOptions = [
     ["product",t("view_product")],
@@ -2660,7 +2847,7 @@ function renderStock(){
   ];
 
   const subtotalOf = (arts) => arts.reduce((acc,a)=>{
-    const {boxes, weight} = articleTotals(a.code);
+    const {boxes, weight} = articleTotals(a.code, stockUnitsForView);
     acc.boxes += boxes; acc.weight += weight; acc.value += weight*(a.price_per_kg||0);
     return acc;
   }, {boxes:0, weight:0, value:0});
@@ -2702,7 +2889,7 @@ function renderStock(){
       : sorted.sort((a,b)=>naturalCodeSort(a.code,b.code));
     visibleCodes = sorted.map(a=>a.code);
     sub = subtotalOf(sorted);
-    listHTML = sorted.length===0 ? `<p class="center-note">${t("no_results")}</p>` : sorted.map(articleCardHTML).join("");
+    listHTML = sorted.length===0 ? `<p class="center-note">${t("no_results")}</p>` : sorted.map(a=>articleCardHTML(a, stockUnitsForView)).join("");
   }
   else if (state.stockView === "category"){
     const allGroups = {};
@@ -2731,8 +2918,8 @@ function renderStock(){
       const [temp, cut] = key.split("|");
       const arts = (groups[key]||[]).sort((a,b)=>a.name.localeCompare(b.name,'el'));
       if (arts.length===0) return "";
-      const groupBoxes = arts.reduce((s,a)=>s+articleTotals(a.code).boxes,0);
-      const groupWeight = arts.reduce((s,a)=>s+articleTotals(a.code).weight,0);
+      const groupBoxes = arts.reduce((s,a)=>s+articleTotals(a.code, stockUnitsForView).boxes,0);
+      const groupWeight = arts.reduce((s,a)=>s+articleTotals(a.code, stockUnitsForView).weight,0);
       const tempCls = temp==="Frozen" ? "frost" : temp==="Fresh" ? "fresh" : "";
       return `
         <div style="margin-bottom:14px;">
@@ -2741,7 +2928,7 @@ function renderStock(){
             <span class="muted2" style="font-size:11px;">${groupBoxes} ${t("boxes_short")} · ${groupWeight.toFixed(1)} ${t("kg")}</span>
           </div>
           <div class="stack" style="gap:6px;">
-            ${arts.map(articleCardHTML).join("")}
+            ${arts.map(a=>articleCardHTML(a, stockUnitsForView)).join("")}
           </div>
         </div>`;
     }).join("");
@@ -2752,7 +2939,7 @@ function renderStock(){
         <div><label>${t("from")}</label><input type="date" id="stockFilterFrom" value="${state.stockFilterFrom||""}" style="width:auto;" /></div>
         <div><label>${t("to")}</label><input type="date" id="stockFilterTo" value="${state.stockFilterTo||""}" style="width:auto;" /></div>
       </div>`;
-    let lotsWithStock = state.stockUnits.filter(u=>(u.volume_boxes>0||u.weight_kg>0));
+    let lotsWithStock = stockUnitsForView.filter(u=>(u.volume_boxes>0||u.weight_kg>0));
     if (state.stockFilterFrom) lotsWithStock = lotsWithStock.filter(u=>u.bbd && u.bbd>=state.stockFilterFrom);
     if (state.stockFilterTo) lotsWithStock = lotsWithStock.filter(u=>u.bbd && u.bbd<=state.stockFilterTo);
     lotsWithStock = lotsWithStock.sort((a,b)=>(a.bbd||"9999-99-99").localeCompare(b.bbd||"9999-99-99"));
@@ -2781,7 +2968,7 @@ function renderStock(){
       </div>`;
     const fromDate = state.stockFilterFrom || defaultFrom;
     const toDate = state.stockFilterTo || defaultTo;
-    const lotsThisMonth = state.stockUnits.filter(u=>u.bbd && u.bbd>=fromDate && u.bbd<=toDate && (u.volume_boxes>0||u.weight_kg>0))
+    const lotsThisMonth = stockUnitsForView.filter(u=>u.bbd && u.bbd>=fromDate && u.bbd<=toDate && (u.volume_boxes>0||u.weight_kg>0))
       .sort((a,b)=>a.bbd.localeCompare(b.bbd));
     sub = subtotalOfLots(lotsThisMonth);
     listHTML = lotsThisMonth.length===0 ? `<p class="center-note">${t("no_lots_period")}</p>` : lotsThisMonth.map(l=>{
@@ -2799,7 +2986,7 @@ function renderStock(){
     }).join("");
   }
   else if (state.stockView === "batch"){
-    const allLotsWithStock = state.stockUnits.filter(u=>(u.volume_boxes>0||u.weight_kg>0));
+    const allLotsWithStock = stockUnitsForView.filter(u=>(u.volume_boxes>0||u.weight_kg>0));
     const batchKeys = [...new Set(allLotsWithStock.map(u=>u.reference || t("no_batch_reference")))].sort();
     filterBarHTML = `
       <div class="chipwrap">
@@ -2854,6 +3041,7 @@ function renderStock(){
         <button class="btn" id="exportStockBtn">${t("export_csv")}</button>
         <button class="btn" id="exportStockPdfBtn">${t("export_pdf")}</button>
       </div>
+      ${warehouseFilterBarHTML}
       <div class="grid2">
         <div class="stat"><div class="muted">${t("stock_total_boxes")}</div><div class="v">${totalBoxes}</div></div>
         <div class="stat"><div class="muted">${t("stock_total_kg")}</div><div class="v">${totalWeight.toFixed(1)}</div></div>
@@ -3211,6 +3399,15 @@ function bindEvents(){
     state.editingCustomer = null;
     render();
   });
+  const blockArticleBtn = document.getElementById("blockArticleBtn");
+  if (blockArticleBtn) blockArticleBtn.onclick = () => {
+    const code = (document.getElementById("blockArticleSelect")||{}).value;
+    if (!code) return showToast(state.lang==='en'?'Select a product first':'Επίλεξε πρώτα προϊόν');
+    toggleBlockArticle(blockArticleBtn.dataset.blockcust, code);
+  };
+  root.querySelectorAll("[data-unblockart]").forEach(b=>b.onclick=()=>{
+    toggleBlockArticle(b.dataset.unblockcust, b.dataset.unblockart);
+  });
   root.querySelectorAll("[data-gotohistorycustomer]").forEach(el=>el.onclick=()=>{
     state.tab = "history";
     state.historyView = "customer";
@@ -3220,7 +3417,20 @@ function bindEvents(){
   });
 
   const custSel = document.getElementById("customerSelect");
-  if (custSel) custSel.onchange = e => { state.customerId = e.target.value; };
+  if (custSel) custSel.onchange = e => { state.customerId = e.target.value; render(); };
+  const orderWarehouseSelect = document.getElementById("orderWarehouseSelect");
+  if (orderWarehouseSelect) orderWarehouseSelect.onchange = e => {
+    const newWh = e.target.value;
+    if (newWh !== state.orderWarehouseId && Object.values(state.cart).some(q=>q>0)){
+      if (!confirm(state.lang==='en'?'Changing warehouse will clear the current cart. Continue?':'Η αλλαγή αποθήκης θα αδειάσει το τρέχον καλάθι. Συνέχεια;')){
+        render();
+        return;
+      }
+      state.cart = {}; state.cartPrices = {};
+    }
+    state.orderWarehouseId = newWh;
+    render();
+  };
   const searchInput = document.getElementById("searchInput");
   if (searchInput) searchInput.oninput = e => {
     state.search = e.target.value; render();
@@ -3294,6 +3504,7 @@ function bindEvents(){
       bbd: document.getElementById("l_bbd").value || null,
       reference: document.getElementById("l_reference").value.trim(),
       tenant_id: state.activeTenantId,
+      warehouse_id: (document.getElementById("l_warehouse")||{}).value || null,
     };
     const {error} = await sb.from("stock_units").upsert(rec, {onConflict:"sscc"});
     if (error) return showToast(`Σφάλμα: ${error.message}`);
@@ -3366,6 +3577,29 @@ function bindEvents(){
     await loadAll();
     showToast(t("toast_stock_cleared"));
   };
+  const importWarehouseSelect = document.getElementById("importWarehouseSelect");
+  if (importWarehouseSelect) importWarehouseSelect.onchange = e => { state.importWarehouseId = e.target.value; };
+
+  // warehouses (filter + manager)
+  root.querySelectorAll("[data-whfilterchip]").forEach(chip=>chip.onclick=()=>{
+    state.stockFilterWarehouse = chip.dataset.whfilterchip || "";
+    render();
+  });
+  const toggleWarehouseManagerBtn = document.getElementById("toggleWarehouseManagerBtn");
+  if (toggleWarehouseManagerBtn) toggleWarehouseManagerBtn.onclick = () => { state.showWarehouseManager = !state.showWarehouseManager; render(); };
+  const addWarehouseBtn = document.getElementById("addWarehouseBtn");
+  if (addWarehouseBtn) addWarehouseBtn.onclick = () => { state.editingWarehouse = {isNew:true, name:"", code:""}; render(); };
+  root.querySelectorAll("[data-editwh]").forEach(b=>b.onclick=()=>{
+    const wh = state.warehouses.find(w=>w.id===b.dataset.editwh);
+    if (wh) state.editingWarehouse = {...wh, isNew:false};
+    render();
+  });
+  root.querySelectorAll("[data-delwh]").forEach(b=>b.onclick=()=>deleteWarehouse(b.dataset.delwh));
+  const saveWarehouseBtn = document.getElementById("saveWarehouseBtn");
+  if (saveWarehouseBtn) saveWarehouseBtn.onclick = saveWarehouse;
+  const cancelWarehouseBtn = document.getElementById("cancelWarehouseBtn");
+  if (cancelWarehouseBtn) cancelWarehouseBtn.onclick = () => { state.editingWarehouse = null; render(); };
+
   const doImportCBtn = document.getElementById("doImportCBtn");
   if (doImportCBtn) doImportCBtn.onclick = doImportCustomers;
   const cancelImportCBtn = document.getElementById("cancelImportCBtn");
@@ -3859,6 +4093,7 @@ async function deleteShipment(shipmentRef){
 }
 
 async function doImportStock(){
+  if (state.warehouses.length>0 && !state.importWarehouseId) return showToast(state.lang==='en'?'Select a warehouse first':'Επίλεξε πρώτα αποθήκη');
   const raw = document.getElementById("importText").value;
   const {mappedHeaders, records} = parseStockTable(raw);
   console.log("Αντιστοίχιση στηλών:", document.getElementById("importText").value.split("\n")[0].split(/[,;\t]/).map((h,i)=>`${h.trim()} -> ${mappedHeaders[i]||"(αγνοήθηκε)"}`));
@@ -3896,6 +4131,7 @@ async function doImportStock(){
       reference: r.reference || "",
       custom: r.custom || {},
       tenant_id: state.activeTenantId,
+      warehouse_id: state.importWarehouseId || null,
     };
     const {error} = await sb.from("stock_units").upsert(rec, {onConflict:"sscc"});
     if (error){ console.error("stock upsert error", rec.sscc, error); lotErrors++; lastError = error; }
