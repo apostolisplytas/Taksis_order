@@ -524,6 +524,7 @@ let state = {
   showImportIncoming: false, incomingImporting: false, expandedIncomingGroups: new Set(),
   warehouses: [],
   stockFilterWarehouse: "", orderWarehouseId: "", importWarehouseId: "",
+  stockFilterReservedOnly: false,
   editingWarehouse: null, showWarehouseManager: false,
   reservePickerCode: "",
 };
@@ -2886,7 +2887,8 @@ function renderTrash(){
 }
 
 function renderStock(){
-  const stockUnitsForView = filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse);
+  let stockUnitsForView = filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse);
+  if (state.stockFilterReservedOnly) stockUnitsForView = stockUnitsForView.filter(u=>reservedBoxesOf(u) > 0);
   const totalBoxes = stockUnitsForView.reduce((s,u)=>s+(Number(u.volume_boxes)||0),0);
   const totalWeight = stockUnitsForView.reduce((s,u)=>s+(Number(u.weight_kg)||0),0);
   const availableBoxesTotal = stockUnitsForView.reduce((s,u)=>s+freeBoxesInLot(u),0);
@@ -2912,6 +2914,14 @@ function renderStock(){
       <p class="muted" style="margin:0 0 8px;">${state.lang==='en'?'No warehouses set up yet.':'Δεν έχουν οριστεί ακόμα αποθήκες.'}</p>
       <button class="btn link" id="toggleWarehouseManagerBtn" style="padding:0;">${state.lang==='en'?'Add a warehouse':'Προσθήκη αποθήκης'}</button>
       ${state.showWarehouseManager ? renderWarehouseManager() : ""}
+    </div>
+  `;
+
+  const reservedFilterHTML = `
+    <div class="card" style="border-color:var(--border2);">
+      <div class="chipwrap">
+        <button type="button" class="chip ${state.stockFilterReservedOnly?'active':''}" id="toggleReservedOnlyChip">🔒 ${state.lang==='en'?'Reserved only':'Μόνο κρατημένα'}</button>
+      </div>
     </div>
   `;
 
@@ -3132,6 +3142,7 @@ function renderStock(){
         <button class="btn" id="exportStockPdfBtn">${t("export_pdf")}</button>
       </div>
       ${warehouseFilterBarHTML}
+      ${reservedFilterHTML}
       <div class="grid2">
         <div class="stat"><div class="muted">${t("stock_total_boxes")}</div><div class="v">${totalBoxes}</div></div>
         <div class="stat"><div class="muted">${t("stock_total_kg")}</div><div class="v">${totalWeight.toFixed(1)}</div></div>
@@ -3714,6 +3725,8 @@ function bindEvents(){
   });
   const toggleWarehouseManagerBtn = document.getElementById("toggleWarehouseManagerBtn");
   if (toggleWarehouseManagerBtn) toggleWarehouseManagerBtn.onclick = () => { state.showWarehouseManager = !state.showWarehouseManager; render(); };
+  const toggleReservedOnlyChip = document.getElementById("toggleReservedOnlyChip");
+  if (toggleReservedOnlyChip) toggleReservedOnlyChip.onclick = () => { state.stockFilterReservedOnly = !state.stockFilterReservedOnly; render(); };
   const addWarehouseBtn = document.getElementById("addWarehouseBtn");
   if (addWarehouseBtn) addWarehouseBtn.onclick = () => { state.editingWarehouse = {isNew:true, name:"", code:""}; render(); };
   root.querySelectorAll("[data-editwh]").forEach(b=>b.onclick=()=>{
