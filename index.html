@@ -540,6 +540,7 @@ let state = {
   stockFilterWarehouse: "", orderWarehouseId: "", importWarehouseId: "",
   stockFilterReservedOnly: false,
   orderDeliveryDate: "",
+  historySentFilter: "",
   editingWarehouse: null, showWarehouseManager: false,
   reservePickerCode: "",
 };
@@ -862,10 +863,17 @@ function orderLineValue(i){
   return (i.qty||0)*(i.price||0);
 }
 function orderTotal(o){ return o.items.reduce((s,i)=>s+orderLineValue(i),0); }
+// Φιλτράρει μια λίστα παραγγελιών ανάλογα με το αν έχει κατέβει το template αποθήκης.
+function applySentFilter(orders){
+  if (state.historySentFilter === "sent") return orders.filter(o=>!!o.warehouse_template_downloaded_at);
+  if (state.historySentFilter === "notsent") return orders.filter(o=>!o.warehouse_template_downloaded_at);
+  return orders;
+}
 function dayViewOrders(){
-  return state.historyRange
+  const base = state.historyRange
     ? state.orders.filter(o=>o.date>=state.historyRange.from && o.date<=state.historyRange.to)
     : state.orders.filter(o=>o.date===state.historyDate);
+  return applySentFilter(base);
 }
 function orderTotalWeight(o){ return o.items.reduce((s,i)=>s+(i.weight||0),0); }
 function orderTotalBoxes(o){ return o.items.reduce((s,i)=>s+(i.qty||0),0); }
@@ -2406,7 +2414,7 @@ function renderCustomerDetail(customerId){
 /* ---------------- HISTORY TAB ---------------- */
 function renderHistory(){
   const dayOrders = dayViewOrders();
-  const customerOrders = state.historyCustomer ? state.orders.filter(o=>o.customer_id===state.historyCustomer) : [];
+  const customerOrders = state.historyCustomer ? applySentFilter(state.orders.filter(o=>o.customer_id===state.historyCustomer)) : [];
   const visibleOrders = state.historyView==='day' ? dayOrders : customerOrders;
   const selectedCount = visibleOrders.filter(o=>state.selectedOrders.has(o.id)).length;
   const allSelected = visibleOrders.length>0 && selectedCount===visibleOrders.length;
@@ -2445,6 +2453,12 @@ function renderHistory(){
           ${state.customers.map(c=>`<option value="${c.id}" ${state.historyCustomer===c.id?'selected':''}>${esc(c.name)}</option>`).join("")}
         </select>
       `}
+
+      <div class="chipwrap">
+        <button type="button" class="chip ${!state.historySentFilter?'active':''}" data-sentfilter="">${state.lang==='en'?'All':'Όλες'}</button>
+        <button type="button" class="chip ${state.historySentFilter==='sent'?'active':''}" data-sentfilter="sent">✅ ${state.lang==='en'?'Sent':'Σταλμένες'}</button>
+        <button type="button" class="chip ${state.historySentFilter==='notsent'?'active':''}" data-sentfilter="notsent">⚠️ ${state.lang==='en'?'Not sent':'Μη σταλμένες'}</button>
+      </div>
 
       ${visibleOrders.length>0 ? `
         <div class="row" style="flex-wrap:wrap;gap:8px;">
@@ -3804,6 +3818,11 @@ function bindEvents(){
 
   // history tab
   root.querySelectorAll("[data-hview]").forEach(b=>b.onclick=()=>{ state.historyView=b.dataset.hview; state.selectedOrders.clear(); render(); });
+  root.querySelectorAll("[data-sentfilter]").forEach(chip=>chip.onclick=()=>{
+    state.historySentFilter = chip.dataset.sentfilter || "";
+    state.selectedOrders.clear();
+    render();
+  });
   root.querySelectorAll("[data-datemode]").forEach(b=>b.onclick=()=>{
     state.historyDateMode = b.dataset.datemode;
     if (state.historyDateMode === "range" && !state.historyRange){
@@ -3921,7 +3940,7 @@ function bindEvents(){
   if (selectAllOrders) selectAllOrders.onchange = () => {
     const visibleOrders = state.historyView==='day'
       ? dayViewOrders()
-      : state.orders.filter(o=>o.customer_id===state.historyCustomer);
+      : applySentFilter(state.orders.filter(o=>o.customer_id===state.historyCustomer));
     if (selectAllOrders.checked) visibleOrders.forEach(o=>state.selectedOrders.add(o.id));
     else visibleOrders.forEach(o=>state.selectedOrders.delete(o.id));
     render();
@@ -3929,7 +3948,7 @@ function bindEvents(){
   function currentViewOrders(){
     return state.historyView==='day'
       ? dayViewOrders()
-      : state.orders.filter(o=>o.customer_id===state.historyCustomer);
+      : applySentFilter(state.orders.filter(o=>o.customer_id===state.historyCustomer));
   }
   function ordersForExport(){
     const visible = currentViewOrders();
