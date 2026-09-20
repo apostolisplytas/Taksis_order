@@ -980,6 +980,16 @@ function exportServiroadXLSX(order){
   XLSX.writeFile(wb, filename);
 }
 
+// Σημειώνει ότι το template αποθήκης (Logifrio/Serviroad) κατέβηκε για αυτή την παραγγελία,
+// ώστε να φαίνεται στην κάρτα της παραγγελίας αν έχει σταλεί ήδη στην αποθήκη.
+async function markTemplateDownloaded(order){
+  const ts = new Date().toISOString();
+  order.warehouse_template_downloaded_at = ts;
+  const {error} = await sb.from("orders").update({warehouse_template_downloaded_at: ts}).eq("id", order.id);
+  if (error) console.error("markTemplateDownloaded:", error.message);
+  render();
+}
+
 function exportDeliverySlipPDF(order){
   if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
@@ -1247,7 +1257,9 @@ function exportArticleStatsPDF(){
 // (Ανά προϊόν / κωδικό / κατηγορία / ημ. λήξης / επόμενες 30 ημέρες), ώστε η εξαγωγή να
 // αντιστοιχεί ακριβώς σε αυτό που βλέπει ο χρήστης στην οθόνη.
 function getStockExportPairs(){
-  let pairs = state.stockUnits
+  let baseUnits = filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse);
+  if (state.stockFilterReservedOnly) baseUnits = baseUnits.filter(u=>reservedBoxesOf(u) > 0);
+  let pairs = baseUnits
     .filter(u=>(u.volume_boxes>0||u.weight_kg>0))
     .map(u=>({u, a: state.articles.find(x=>x.code===u.article_code)}));
 
@@ -1297,15 +1309,22 @@ function getStockExportPairs(){
 function stockViewLabel(view){
   return ({product:t("view_product"), code:t("view_code"), category:t("view_category"), expiry:t("view_expiry"), month:t("view_month")})[view] || view;
 }
+// Κείμενο κράτησης μιας παρτίδας για εξαγωγές (CSV/PDF): κενό αν δεν είναι κρατημένη.
+function reservedLabelFor(u){
+  const boxes = reservedBoxesOf(u);
+  if (boxes <= 0) return "";
+  return `${custName(u.reserved_customer_id)} (${boxes}/${u.volume_boxes})`;
+}
 function exportStockCSV(){
   const pairs = getStockExportPairs();
   if (pairs.length===0) return showToast(t("toast_no_stock_export"));
   const includeCategory = state.stockView === "category";
-  const headers = ["SSCC",t("h_article_code"),t("h_article"), ...(includeCategory?[t("h_category")]:[]), t("h_zone"),"Lot","BBD",t("h_boxes_h"),t("h_kg_h"),"Reference"];
+  const headers = ["SSCC",t("h_article_code"),t("h_article"), ...(includeCategory?[t("h_category")]:[]), (state.lang==='en'?'Warehouse':'Αποθήκη'), t("h_zone"),"Lot","BBD",t("h_boxes_h"),t("h_kg_h"),"Reference",(state.lang==='en'?'Reserved for':'Κρατημένο για')];
   const rows = pairs.map(({u,a})=>[
     u.sscc, u.article_code, a?a.name:"",
     ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
-    u.zone||"", u.lot_code||"", u.bbd?csvGuard(formatDateEL(u.bbd)):"", u.volume_boxes, u.weight_kg, u.reference||""
+    u.warehouse_id?warehouseName(u.warehouse_id):"",
+    u.zone||"", u.lot_code||"", u.bbd?csvGuard(formatDateEL(u.bbd)):"", u.volume_boxes, u.weight_kg, u.reference||"", reservedLabelFor(u)
   ]);
   downloadCSV(`taksis_order-stock-${state.stockView}-${todayISO()}.csv`, headers, rows);
 }
@@ -1323,11 +1342,12 @@ function exportStockPDF(){
   doc.setTextColor(120);
   doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())}`, 14, 21);
 
-  const head = [t("h_short"),t("h_article"), ...(includeCategory?[t("h_category")]:[]), t("h_zone"),"Lot","BBD",t("h_shortboxes"),t("h_kg_h"),"Reference"];
+  const head = [t("h_short"),t("h_article"), ...(includeCategory?[t("h_category")]:[]), (state.lang==='en'?'Warehouse':'Αποθήκη'), t("h_zone"),"Lot","BBD",t("h_shortboxes"),t("h_kg_h"),"Reference",(state.lang==='en'?'Reserved for':'Κρατημένο για')];
   const body = pairs.map(({u,a})=>[
     u.article_code, a?a.name:"",
     ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
-    u.zone||"", u.lot_code||"", u.bbd?formatDateEL(u.bbd):"", String(u.volume_boxes), Number(u.weight_kg).toFixed(1), u.reference||""
+    u.warehouse_id?warehouseName(u.warehouse_id):"",
+    u.zone||"", u.lot_code||"", u.bbd?formatDateEL(u.bbd):"", String(u.volume_boxes), Number(u.weight_kg).toFixed(1), u.reference||"", reservedLabelFor(u)
   ]);
   doc.autoTable({
     startY: 26,
@@ -1886,7 +1906,7 @@ async function saveOrderEdits(){
 
   const orderId = state.editingOrderId;
   const editingOrder = state.orders.find(o=>o.id===orderId);
-  const updatePayload = {items, customer_id: state.customerId, delivery_date: state.orderDeliveryDate || defaultDeliveryDate(editingOrder?.date)};
+  const updatePayload = {items, customer_id: state.customerId, delivery_date: state.orderDeliveryDate || defaultDeliveryDate(editingOrder?.date), warehouse_template_downloaded_at: null};
   if (state.orderWarehouseId) updatePayload.warehouse_id = state.orderWarehouseId;
   const {error: updErr} = await sb.from("orders").update(updatePayload).eq("id", orderId);
   if (updErr) return showToast(`Σφάλμα: ${updErr.message}`);
@@ -2474,7 +2494,7 @@ function renderOrderCard(o, showDate){
         <div class="row" style="align-items:flex-start;gap:10px;">
           <input type="checkbox" data-ordercheck="${o.id}" ${checked?'checked':''} style="width:auto;margin-top:2px;" />
           <div>
-            <div style="font-size:14px;font-weight:500;">${esc(custName(o.customer_id))} ${o.order_number?`<span class="muted2" style="font-weight:400;font-size:11px;">${esc(o.order_number)}</span>`:""}</div>
+            <div style="font-size:14px;font-weight:500;">${esc(custName(o.customer_id))} ${o.order_number?`<span class="muted2" style="font-weight:400;font-size:11px;">${esc(o.order_number)}</span>`:""} ${o.warehouse_template_downloaded_at?`<span class="badge cart" title="${state.lang==='en'?'Downloaded':'Έγινε λήψη'}: ${new Date(o.warehouse_template_downloaded_at).toLocaleString(state.lang==='en'?'en-GB':'el-GR')}">✅ ${state.lang==='en'?'Sent to warehouse':'Στάλθηκε στην αποθήκη'}</span>`:`<span class="badge" style="background:rgba(232,161,61,0.18);color:var(--amber-bright);">⚠️ ${state.lang==='en'?'Not sent yet':'Δεν έχει σταλεί'}</span>`}</div>
             ${showDate?`<div class="muted">${o.date}</div>`:""}
             <div class="muted">${totalB} ${t("boxes_short")} · ${totalW.toFixed(1)} ${t("kg")}</div>
             <div class="muted">🚚 ${state.lang==='en'?'Delivery':'Παράδοση'}: ${formatDateEL(o.delivery_date || defaultDeliveryDate(o.date))}</div>
@@ -2496,8 +2516,10 @@ function renderOrderCard(o, showDate){
         <button class="btn" data-deliveryslip="${o.id}" style="font-size:12px;padding:6px 10px;">${t("delivery_slip")}</button>
         ${(() => {
           const whName = o.warehouse_id ? warehouseName(o.warehouse_id) : "";
-          if (whName.toLowerCase().includes("serviroad")) return `<button class="btn" data-serviroad="${o.id}" style="font-size:12px;padding:6px 10px;">⇩ Serviroad template</button>`;
-          return `<button class="btn" data-logifrio="${o.id}" style="font-size:12px;padding:6px 10px;">⇩ Logifrio template</button>`;
+          const already = !!o.warehouse_template_downloaded_at;
+          const label = already ? (state.lang==='en'?'⇩ Re-download template':'⇩ Ξανά-λήψη template') : "⇩ ";
+          if (whName.toLowerCase().includes("serviroad")) return `<button class="btn" data-serviroad="${o.id}" style="font-size:12px;padding:6px 10px;">${already?label:'⇩ Serviroad template'}</button>`;
+          return `<button class="btn" data-logifrio="${o.id}" style="font-size:12px;padding:6px 10px;">${already?label:'⇩ Logifrio template'}</button>`;
         })()}
       </div>
     </div>
@@ -3878,13 +3900,17 @@ function bindEvents(){
     const order = state.orders.find(o=>o.id===b.dataset.deliveryslip);
     if (order) exportDeliverySlipPDF(order);
   });
-  root.querySelectorAll("[data-serviroad]").forEach(b=>b.onclick=()=>{
+  root.querySelectorAll("[data-serviroad]").forEach(b=>b.onclick=async ()=>{
     const order = state.orders.find(o=>o.id===b.dataset.serviroad);
-    if (order) exportServiroadXLSX(order);
+    if (!order) return;
+    exportServiroadXLSX(order);
+    await markTemplateDownloaded(order);
   });
-  root.querySelectorAll("[data-logifrio]").forEach(b=>b.onclick=()=>{
+  root.querySelectorAll("[data-logifrio]").forEach(b=>b.onclick=async ()=>{
     const order = state.orders.find(o=>o.id===b.dataset.logifrio);
-    if (order) exportLogifrioXLSX(order);
+    if (!order) return;
+    exportLogifrioXLSX(order);
+    await markTemplateDownloaded(order);
   });
   root.querySelectorAll("[data-ordercheck]").forEach(cb=>cb.onchange=()=>{
     const id = cb.dataset.ordercheck;
