@@ -405,6 +405,20 @@ function t(key, vars){
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 const todayISO = () => new Date().toISOString().slice(0,10);
+// Προσθέτει N εργάσιμες ημέρες (χωρίς Σάββατο/Κυριακή) σε μια ημερομηνία ISO (YYYY-MM-DD).
+function addBusinessDays(dateISO, days){
+  const d = new Date((dateISO || todayISO()) + "T00:00:00");
+  let added = 0;
+  while (added < days){
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay(); // 0=Κυριακή, 6=Σάββατο
+    if (dow !== 0 && dow !== 6) added++;
+  }
+  return d.toISOString().slice(0,10);
+}
+function defaultDeliveryDate(orderDateISO){
+  return addBusinessDays(orderDateISO || todayISO(), 2);
+}
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 // Διαβάζει αρχείο κειμένου δοκιμάζοντας πρώτα UTF-8· αν το αρχείο δεν είναι έγκυρο UTF-8
 // (συνηθισμένο σε CSV εξαγωγές από Excel σε Windows/ANSI), πέφτει πίσω σε Windows-1252
@@ -525,6 +539,7 @@ let state = {
   warehouses: [],
   stockFilterWarehouse: "", orderWarehouseId: "", importWarehouseId: "",
   stockFilterReservedOnly: false,
+  orderDeliveryDate: "",
   editingWarehouse: null, showWarehouseManager: false,
   reservePickerCode: "",
 };
@@ -983,6 +998,8 @@ function exportDeliverySlipPDF(order){
   doc.setFontSize(9);
   doc.setTextColor(120);
   doc.text(formatDateEL(order.date), 196, 24, {align:"right"});
+  doc.setTextColor(20);
+  doc.text(`${state.lang==='en'?'Delivery':'Παράδοση'}: ${formatDateEL(order.delivery_date || defaultDeliveryDate(order.date))}`, 196, 30, {align:"right"});
 
   let y = 38;
   doc.setDrawColor(220);
@@ -1646,7 +1663,13 @@ function renderOrders(){
         </div>
       ` : ""}
 
-      ${needsWarehousePick ? `<p class="center-note">${state.lang==='en'?'Select a warehouse above to see available products.':'Επίλεξε αποθήκη παραπάνω για να δεις τα διαθέσιμα προϊόντα.'}</p>` : `
+      <div>
+        <label>${state.lang==='en'?'Delivery date':'Ημερομηνία παράδοσης'}</label>
+        <input type="date" id="orderDeliveryDateInput" value="${state.orderDeliveryDate || defaultDeliveryDate(todayISO())}" />
+        <p class="muted" style="margin:4px 0 0;">${state.lang==='en'?'Defaults to 2 business days from today — change it if needed.':'Προεπιλογή: 2 εργάσιμες ημέρες από σήμερα — άλλαξέ την αν χρειάζεται.'}</p>
+      </div>
+
+      ${needsWarehousePick ?`<p class="center-note">${state.lang==='en'?'Select a warehouse above to see available products.':'Επίλεξε αποθήκη παραπάνω για να δεις τα διαθέσιμα προϊόντα.'}</p>` : `
 
       <div class="card" style="border-color:var(--brand);">
         <div class="row" style="cursor:pointer;" data-togglequickorder="1">
@@ -1807,6 +1830,7 @@ async function startEditOrder(orderId){
   state.editingOrderOriginalItems = JSON.parse(JSON.stringify(order.items || []));
   state.customerId = order.customer_id;
   if (order.warehouse_id) state.orderWarehouseId = order.warehouse_id;
+  state.orderDeliveryDate = order.delivery_date || defaultDeliveryDate(order.date);
   state.cart = {};
   state.cartPrices = {};
   (order.items||[]).forEach(it=>{
@@ -1837,6 +1861,7 @@ async function cancelEditOrder(){
   state.cart = {};
   state.cartPrices = {};
   state.customerId = "";
+  state.orderDeliveryDate = "";
   await loadAll();
 }
 
@@ -1859,7 +1884,8 @@ async function saveOrderEdits(){
   if (items.length===0) return showToast(t("toast_add_products"));
 
   const orderId = state.editingOrderId;
-  const updatePayload = {items, customer_id: state.customerId};
+  const editingOrder = state.orders.find(o=>o.id===orderId);
+  const updatePayload = {items, customer_id: state.customerId, delivery_date: state.orderDeliveryDate || defaultDeliveryDate(editingOrder?.date)};
   if (state.orderWarehouseId) updatePayload.warehouse_id = state.orderWarehouseId;
   const {error: updErr} = await sb.from("orders").update(updatePayload).eq("id", orderId);
   if (updErr) return showToast(`Σφάλμα: ${updErr.message}`);
@@ -1879,6 +1905,7 @@ async function saveOrderEdits(){
   state.editingOrderOriginalItems = null;
   state.cart = {};
   state.cartPrices = {};
+  state.orderDeliveryDate = "";
   showToast(t("toast_order_updated"));
   await loadAll();
 }
@@ -1901,7 +1928,8 @@ async function submitOrder(){
     items.push({sscc, article_code: su.article_code, article_name: a?.name||su.article_code, lot_code: su.lot_code, bbd: su.bbd, qty, weight, price: a?.price||0, price_per_kg: pricePerKg, value: weight*pricePerKg});
   }
   if (items.length===0) return showToast(t("toast_add_products"));
-  const order = {id: uid(), date: todayISO(), customer_id: state.customerId, items, created_at: new Date().toISOString(), tenant_id: state.activeTenantId, warehouse_id: state.orderWarehouseId || null};
+  const orderDate = todayISO();
+  const order = {id: uid(), date: orderDate, delivery_date: state.orderDeliveryDate || defaultDeliveryDate(orderDate), customer_id: state.customerId, items, created_at: new Date().toISOString(), tenant_id: state.activeTenantId, warehouse_id: state.orderWarehouseId || null};
   const {data: insertedRows, error: orderErr} = await sb.from("orders").insert(order).select();
   if (orderErr) return showToast(`Σφάλμα αποθήκευσης παραγγελίας: ${orderErr.message}`);
   const orderNo = insertedRows && insertedRows[0] ? insertedRows[0].order_number : null;
@@ -1917,6 +1945,7 @@ async function submitOrder(){
   }
   state.cart = {};
   state.cartPrices = {};
+  state.orderDeliveryDate = "";
   showToast(orderNo ? `Η παραγγελία ${orderNo} καταχωρήθηκε` : "Η παραγγελία καταχωρήθηκε");
   await loadAll();
 }
@@ -2447,6 +2476,7 @@ function renderOrderCard(o, showDate){
             <div style="font-size:14px;font-weight:500;">${esc(custName(o.customer_id))} ${o.order_number?`<span class="muted2" style="font-weight:400;font-size:11px;">${esc(o.order_number)}</span>`:""}</div>
             ${showDate?`<div class="muted">${o.date}</div>`:""}
             <div class="muted">${totalB} ${t("boxes_short")} · ${totalW.toFixed(1)} ${t("kg")}</div>
+            <div class="muted">🚚 ${state.lang==='en'?'Delivery':'Παράδοση'}: ${formatDateEL(o.delivery_date || defaultDeliveryDate(o.date))}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -3569,6 +3599,8 @@ function bindEvents(){
     state.orderWarehouseId = newWh;
     render();
   };
+  const orderDeliveryDateInput = document.getElementById("orderDeliveryDateInput");
+  if (orderDeliveryDateInput) orderDeliveryDateInput.onchange = e => { state.orderDeliveryDate = e.target.value; };
   const searchInput = document.getElementById("searchInput");
   if (searchInput) searchInput.oninput = e => {
     state.search = e.target.value; render();
