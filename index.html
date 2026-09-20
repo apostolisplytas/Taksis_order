@@ -944,11 +944,11 @@ function exportLogifrioXLSX(order){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Folha1");
 
-  // Ημερομηνία παράδοσης = ημερομηνία παραγγελίας + 2 ημέρες
-  const orderDate = new Date(order.date + "T00:00:00");
-  orderDate.setDate(orderDate.getDate() + 2);
-  const dd = String(orderDate.getDate()).padStart(2,"0");
-  const mm = String(orderDate.getMonth()+1).padStart(2,"0");
+  // Ημερομηνία παράδοσης όπως ορίστηκε στην παραγγελία (default: 2 εργάσιμες ημέρες)
+  const deliveryDateISO = order.delivery_date || defaultDeliveryDate(order.date);
+  const deliveryDate = new Date(deliveryDateISO + "T00:00:00");
+  const dd = String(deliveryDate.getDate()).padStart(2,"0");
+  const mm = String(deliveryDate.getMonth()+1).padStart(2,"0");
 
   const filename = `Logifrio_New_order_${sanitizeForFilename(customerName)}_${dd}_${mm}.xlsx`;
   XLSX.writeFile(wb, filename);
@@ -971,9 +971,10 @@ function exportServiroadXLSX(order){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Order");
 
-  const orderDate = new Date(order.date + "T00:00:00");
-  const dd = String(orderDate.getDate()).padStart(2,"0");
-  const mm = String(orderDate.getMonth()+1).padStart(2,"0");
+  const deliveryDateISO = order.delivery_date || defaultDeliveryDate(order.date);
+  const deliveryDate = new Date(deliveryDateISO + "T00:00:00");
+  const dd = String(deliveryDate.getDate()).padStart(2,"0");
+  const mm = String(deliveryDate.getMonth()+1).padStart(2,"0");
 
   const filename = `Serviroad_New_order_${sanitizeForFilename(customerName)}_${dd}_${mm}.xlsx`;
   XLSX.writeFile(wb, filename);
