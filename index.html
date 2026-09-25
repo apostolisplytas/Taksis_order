@@ -1337,40 +1337,138 @@ function exportStockCSV(){
   ]);
   downloadCSV(`taksis_order-stock-${state.stockView}-${todayISO()}.csv`, headers, rows);
 }
+// Χρώμα αριστερής ταινίας/κεφαλίδας κατηγορίας, ανάλογα με το cut — style εμπνευσμένο
+// από price-list templates προμηθευτών (π.χ. Devesa): πράσινο για Grass Fed, πορτοκαλί
+// για Grain Fed, γκρι-μπλε για ό,τι άλλο.
+function stockPdfCutColor(cut){
+  if (cut === "Grass Fed") return [46,150,90];
+  if (cut === "Grain Fed" || cut === "Full Set Grain Fed") return [214,120,40];
+  return [90,110,130];
+}
 function exportStockPDF(){
   const pairs = getStockExportPairs();
   if (pairs.length===0) return showToast(t("toast_no_stock_export"));
   if (!window.jspdf) return showToast(t("toast_pdf_lib_error"));
   const { jsPDF } = window.jspdf;
-  const includeCategory = state.stockView === "category";
-  const doc = new jsPDF({orientation:"landscape"});
+  const doc = new jsPDF({orientation:"portrait"});
   setupGreekFont(doc);
-  doc.setFontSize(14);
-  doc.text(`${t("pdf_stock_title")} — ${stockViewLabel(state.stockView)}`, 14, 15);
-  doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())}`, 14, 21);
 
-  const head = [t("h_short"),t("h_article"), ...(includeCategory?[t("h_category")]:[]), (state.lang==='en'?'Warehouse':'Αποθήκη'), t("h_zone"),"Lot","BBD",t("h_shortboxes"),t("h_kg_h"),"Reference",(state.lang==='en'?'Reserved for':'Κρατημένο για')];
-  const body = pairs.map(({u,a})=>[
-    u.article_code, a?a.name:"",
-    ...(includeCategory?[classifyArticle(u.article_code).label]:[]),
-    u.warehouse_id?warehouseName(u.warehouse_id):"",
-    u.zone||"", u.lot_code||"", u.bbd?formatDateEL(u.bbd):"", String(u.volume_boxes), Number(u.weight_kg).toFixed(1), u.reference||"", reservedLabelFor(u)
-  ]);
-  doc.autoTable({
-    startY: 26,
-    head: [head],
-    body,
-    styles:{fontSize:8, font:"NotoSans"},
-    headStyles:{fillColor:[8,80,65], textColor:255, font:"NotoSans", fontStyle:"bold"},
-  });
-  const totalBoxes = pairs.reduce((s,{u})=>s+(Number(u.volume_boxes)||0),0);
-  const totalWeight = pairs.reduce((s,{u})=>s+(Number(u.weight_kg)||0),0);
-  const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || 30;
-  doc.setFontSize(10);
+  const PAGE_W = doc.internal.pageSize.getWidth();
+  const PAGE_H = doc.internal.pageSize.getHeight();
+  const MARGIN = 14;
+  const CONTENT_W = PAGE_W - MARGIN*2;
+  const RED = [196,60,80];
+  const GREEN = [30,145,80];
+  const showWarehouseCol = state.warehouses.length>0;
+
+  doc.setFont("NotoSans","bold");
+  doc.setFontSize(16);
   doc.setTextColor(20);
-  doc.text(`${pairs.length} lots · ${totalBoxes} ${t("h_shortboxes")} · ${totalWeight.toFixed(1)} ${t("kg")}`, 14, finalY+8);
+  doc.text(t("pdf_stock_title"), MARGIN, 18);
+  doc.setFont("NotoSans","normal");
+  doc.setFontSize(9);
+  doc.setTextColor(130);
+  doc.text(`${t("pdf_export_label")}: ${formatDateEL(todayISO())} — ${stockViewLabel(state.stockView)}`, MARGIN, 24);
+  let y = 32;
+  doc.setDrawColor(220);
+  doc.line(MARGIN, y, PAGE_W-MARGIN, y);
+  y += 8;
+
+  function ensureSpace(needed){
+    if (y + needed > PAGE_H - 16){ doc.addPage(); y = 20; }
+  }
+
+  // Ομαδοποίηση: κατηγορία (temp·cut) -> προϊόν -> παρτίδες, ανεξάρτητα από την τρέχουσα
+  // προβολή της οθόνης — έτσι το PDF μοιάζει πάντα με έναν κατάλογο αποθέματος.
+  const groups = {};
+  const groupOrder = [];
+  pairs.forEach(({u,a})=>{
+    const c = classifyArticle(u.article_code);
+    const gkey = c.temp+"|"+c.cut;
+    if (!groups[gkey]){ groups[gkey] = {temp:c.temp, cut:c.cut, articles:{}, articleOrder:[]}; groupOrder.push(gkey); }
+    const g = groups[gkey];
+    if (!g.articles[u.article_code]){ g.articles[u.article_code] = {a, code:u.article_code, lots:[]}; g.articleOrder.push(u.article_code); }
+    g.articles[u.article_code].lots.push(u);
+  });
+  groupOrder.sort((k1,k2)=>{
+    const [t1,c1] = k1.split("|"), [t2,c2] = k2.split("|");
+    const i1 = CATEGORY_ORDER.findIndex(([t,c])=>t===t1&&c===c1);
+    const i2 = CATEGORY_ORDER.findIndex(([t,c])=>t===t2&&c===c2);
+    return (i1<0?999:i1) - (i2<0?999:i2);
+  });
+
+  groupOrder.forEach(gkey=>{
+    const g = groups[gkey];
+    ensureSpace(16);
+    const [rC,gC,bC] = stockPdfCutColor(g.cut);
+    doc.setFillColor(rC,gC,bC);
+    doc.rect(MARGIN, y, 3, 9, "F");
+    doc.setFillColor(24,32,44);
+    doc.rect(MARGIN+3, y, CONTENT_W-3, 9, "F");
+    doc.setFont("NotoSans","bold");
+    doc.setFontSize(10);
+    doc.setTextColor(255,255,255);
+    doc.text(`${g.temp.toUpperCase()} · ${g.cut.toUpperCase()}`, MARGIN+7, y+6.3);
+    y += 9 + 5;
+
+    g.articleOrder.forEach(code=>{
+      const art = g.articles[code];
+      const totalBoxes = art.lots.reduce((s,l)=>s+(Number(l.volume_boxes)||0),0);
+      const totalWeight = art.lots.reduce((s,l)=>s+(Number(l.weight_kg)||0),0);
+      const price = art.a && art.a.price_per_kg ? Number(art.a.price_per_kg) : null;
+      ensureSpace(14);
+      doc.setFont("NotoSans","bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(20);
+      const productName = art.a ? art.a.name : code;
+      doc.text(productName, MARGIN, y+4);
+      const nameWidth = doc.getTextWidth(productName);
+      doc.setFont("NotoSans","normal");
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(String(code), MARGIN + nameWidth + 4, y+4);
+      doc.setFontSize(9);
+      doc.setTextColor(90);
+      doc.text(`${totalBoxes} box / ${totalWeight.toFixed(1)} kg`, PAGE_W-MARGIN, y+2.5, {align:"right"});
+      if (price!=null){
+        doc.setFont("NotoSans","bold");
+        doc.setFontSize(10);
+        doc.setTextColor(GREEN[0],GREEN[1],GREEN[2]);
+        doc.text(`${price.toFixed(2)}€/${t("kg")}`, PAGE_W-MARGIN, y+7.8, {align:"right"});
+        doc.setFont("NotoSans","normal");
+      }
+      y += 9;
+      doc.setDrawColor(230);
+      doc.line(MARGIN, y-1, PAGE_W-MARGIN, y-1);
+      y += 2;
+
+      art.lots.sort((x,y2)=>(x.bbd||"9999-99-99").localeCompare(y2.bbd||"9999-99-99")).forEach(l=>{
+        ensureSpace(6);
+        const reservedTxt = reservedLabelFor(l);
+        const whTxt = showWarehouseCol && l.warehouse_id ? ` · ${warehouseName(l.warehouse_id)}` : "";
+        doc.setFont("NotoSans","normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(70);
+        doc.text(`${l.volume_boxes} box / ${Number(l.weight_kg).toFixed(1)}kg${whTxt}`, MARGIN+4, y+3.5);
+        if (reservedTxt){
+          doc.setFontSize(7.5);
+          doc.setTextColor(200,140,20);
+          doc.text(`${state.lang==='en'?'Reserved':'Κρατημένο'}: ${reservedTxt}`, MARGIN+4, y+7.5);
+        }
+        doc.setFontSize(8.5);
+        doc.setTextColor(RED[0],RED[1],RED[2]);
+        doc.text(l.bbd ? formatDateEL(l.bbd).slice(0,5) : "-", PAGE_W-MARGIN, y+3.5, {align:"right"});
+        y += reservedTxt ? 9.5 : 6;
+      });
+      y += 3;
+    });
+    y += 3;
+  });
+
+  doc.setFont("NotoSans","normal");
+  doc.setFontSize(8);
+  doc.setTextColor(160);
+  doc.text(`taksis_order — ${pairs.length} lots`, MARGIN, PAGE_H-8);
   doc.save(`taksis_order-stock-${state.stockView}-${todayISO()}.pdf`);
 }
 
