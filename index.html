@@ -541,6 +541,7 @@ let state = {
   stockFilterReservedOnly: false,
   orderDeliveryDate: "",
   historySentFilter: "",
+  lastStockClearBatch: null, // {ts, warehouseId, warehouseLabel} — για αναίρεση καθαρισμού stock
   editingWarehouse: null, showWarehouseManager: false,
   reservePickerCode: "",
 };
@@ -2110,8 +2111,19 @@ function renderStockImportBox(){
           <button class="btn btn-primary" id="doImportStockBtn">${t("import_button")}</button>
           <button class="btn link" id="cancelImportStockBtn">${t("cancel")}</button>
         </div>
-        <button class="btn btn-danger-outline" id="clearStockBtn">${t("clear_all_stock")}</button>
+        <button class="btn btn-danger-outline" id="clearStockBtn">${state.warehouses.length>0 && state.importWarehouseId ? `${t("clear_all_stock")} (${esc(warehouseName(state.importWarehouseId))})` : t("clear_all_stock")}</button>
       </div>
+      ${state.lastStockClearBatch ? `
+        <div class="card" style="border-color:var(--amber);background:rgba(232,161,61,0.08);margin-top:8px;">
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <span style="font-size:12px;color:var(--amber-bright);">
+              ${state.lang==='en'?'Stock cleared':'Καθαρίστηκε το stock'}${state.lastStockClearBatch.warehouseLabel?` (${esc(state.lastStockClearBatch.warehouseLabel)})`:''} —
+              ${state.lang==='en'?'you can undo this.':'μπορείς να το αναιρέσεις.'}
+            </span>
+            <button class="btn" id="undoClearStockBtn">↺ ${state.lang==='en'?'Undo':'Αναίρεση'}</button>
+          </div>
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -3778,11 +3790,34 @@ function bindEvents(){
   if (cancelImportStockBtn) cancelImportStockBtn.onclick = () => { state.showImportStock=false; render(); };
   const clearStockBtn = document.getElementById("clearStockBtn");
   if (clearStockBtn) clearStockBtn.onclick = async () => {
-    if (!confirm("Θα διαγραφούν ΟΛΕΣ οι παρτίδες stock (τα είδη/τιμές παραμένουν). Συνέχεια;")) return;
-    const {error} = await sb.from("stock_units").delete().neq("sscc","");
+    const scopedWarehouseId = (state.warehouses.length>0 && state.importWarehouseId) ? state.importWarehouseId : null;
+    if (state.warehouses.length>0 && !scopedWarehouseId){
+      return showToast(state.lang==='en'?'Select a warehouse first (above) — the clear only affects that warehouse.':'Επίλεξε πρώτα αποθήκη (παραπάνω) — ο καθαρισμός αφορά μόνο αυτήν.');
+    }
+    const confirmMsg = scopedWarehouseId
+      ? `Θα διαγραφούν όλες οι παρτίδες stock της αποθήκης «${warehouseName(scopedWarehouseId)}» (τα είδη/τιμές παραμένουν). Μπορείς να το αναιρέσεις μετά. Συνέχεια;`
+      : "Θα διαγραφούν ΟΛΕΣ οι παρτίδες stock (τα είδη/τιμές παραμένουν). Μπορείς να το αναιρέσεις μετά. Συνέχεια;";
+    if (!confirm(confirmMsg)) return;
+    const ts = new Date().toISOString();
+    let q = sb.from("stock_units").update({deleted_at: ts}).is("deleted_at", null);
+    if (scopedWarehouseId) q = q.eq("warehouse_id", scopedWarehouseId);
+    const {error} = await q;
     if (error) return showToast(`Σφάλμα: ${error.message}`);
+    state.lastStockClearBatch = {ts, warehouseId: scopedWarehouseId, warehouseLabel: scopedWarehouseId ? warehouseName(scopedWarehouseId) : null};
     await loadAll();
     showToast(t("toast_stock_cleared"));
+  };
+  const undoClearStockBtn = document.getElementById("undoClearStockBtn");
+  if (undoClearStockBtn) undoClearStockBtn.onclick = async () => {
+    const batch = state.lastStockClearBatch;
+    if (!batch) return;
+    let q = sb.from("stock_units").update({deleted_at: null}).eq("deleted_at", batch.ts);
+    if (batch.warehouseId) q = q.eq("warehouse_id", batch.warehouseId);
+    const {error} = await q;
+    if (error) return showToast(`Σφάλμα επαναφοράς: ${error.message}`);
+    state.lastStockClearBatch = null;
+    await loadAll();
+    showToast(t("toast_restored"));
   };
   const importWarehouseSelect = document.getElementById("importWarehouseSelect");
   if (importWarehouseSelect) importWarehouseSelect.onchange = e => { state.importWarehouseId = e.target.value; };
