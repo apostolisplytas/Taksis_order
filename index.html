@@ -1869,18 +1869,19 @@ function renderOrders(){
           </div>`;
         };
         // Χωρίζουμε τα προϊόντα σε "ήδη στην παραγγελία" (πάνω, χωρίς φίλτρα — για διόρθωση
-        // ποσοτήτων) και "προσθήκη νέων" (κάτω, με αναζήτηση — για να προσθέσεις κάτι άλλο).
-        const inCartFiltered = filtered.filter(a=>cartByArticle[a.code]);
+        // ποσοτήτων, πάντα ορατά όσο είναι στο καλάθι, ανεξάρτητα από αναζήτηση/διαθεσιμότητα)
+        // και "προσθήκη νέων" (κάτω, με αναζήτηση — για να προσθέσεις κάτι άλλο).
+        const inCartArticles = state.articles.filter(a=>cartByArticle[a.code]);
         const notInCartFiltered = filtered.filter(a=>!cartByArticle[a.code]);
         return `
-          ${inCartFiltered.length>0 ? `
+          ${inCartArticles.length>0 ? `
             <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:4px 0 0;">${state.lang==='en'?'In this order':'Σε αυτή την παραγγελία'}</p>
             <div class="stack" style="gap:6px;">
-              ${inCartFiltered.map(a=>articleOrderCardHTML(a)).join("")}
+              ${inCartArticles.map(a=>articleOrderCardHTML(a)).join("")}
             </div>
           ` : ""}
           <input id="searchInput" placeholder="${t("search_article")}" value="${esc(state.search)}" />
-          ${inCartFiltered.length>0 ? `<p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 0;">${state.lang==='en'?'Add products':'Προσθήκη προϊόντων'}</p>` : ""}
+          ${inCartArticles.length>0 ? `<p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 0;">${state.lang==='en'?'Add products':'Προσθήκη προϊόντων'}</p>` : ""}
           <div class="stack" style="gap:6px;">
             ${notInCartFiltered.length===0 ? `<p class="center-note">${state.articles.length===0?t("no_articles"):t("no_results")}</p>` : ""}
             ${notInCartFiltered.map(a=>articleOrderCardHTML(a)).join("")}
