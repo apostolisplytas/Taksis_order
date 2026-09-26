@@ -1816,10 +1816,10 @@ function renderOrders(){
         ` : ""}
       </div>
 
-      <input id="searchInput" placeholder="${t("search_article")}" value="${esc(state.search)}" />
-      <div class="stack" style="gap:6px;">
-        ${filtered.length===0 ? `<p class="center-note">${state.articles.length===0?t("no_articles"):t("no_results")}</p>` : ""}
-        ${filtered.map(a=>{
+      ${(() => {
+        // Μία συνάρτηση για την κάρτα ενός προϊόντος στη Νέα Παραγγελία/Επεξεργασία —
+        // χρησιμοποιείται και για τα είδη που είναι ήδη στην παραγγελία και για τα υπόλοιπα.
+        const articleOrderCardHTML = (a) => {
           const { lots: allLots } = articleTotals(a.code, orderUnits);
           const lotsWithAvail = allLots.map(l=>({l, avail: availableBoxesForCustomer(l, state.customerId)})).filter(x=>x.avail>0);
           const boxes = lotsWithAvail.reduce((s,x)=>s+x.avail,0);
@@ -1867,8 +1867,26 @@ function renderOrders(){
               </div>
             ` : ""}
           </div>`;
-        }).join("")}
-      </div>
+        };
+        // Χωρίζουμε τα προϊόντα σε "ήδη στην παραγγελία" (πάνω, χωρίς φίλτρα — για διόρθωση
+        // ποσοτήτων) και "προσθήκη νέων" (κάτω, με αναζήτηση — για να προσθέσεις κάτι άλλο).
+        const inCartFiltered = filtered.filter(a=>cartByArticle[a.code]);
+        const notInCartFiltered = filtered.filter(a=>!cartByArticle[a.code]);
+        return `
+          ${inCartFiltered.length>0 ? `
+            <p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:4px 0 0;">${state.lang==='en'?'In this order':'Σε αυτή την παραγγελία'}</p>
+            <div class="stack" style="gap:6px;">
+              ${inCartFiltered.map(a=>articleOrderCardHTML(a)).join("")}
+            </div>
+          ` : ""}
+          <input id="searchInput" placeholder="${t("search_article")}" value="${esc(state.search)}" />
+          ${inCartFiltered.length>0 ? `<p class="muted" style="text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 0;">${state.lang==='en'?'Add products':'Προσθήκη προϊόντων'}</p>` : ""}
+          <div class="stack" style="gap:6px;">
+            ${notInCartFiltered.length===0 ? `<p class="center-note">${state.articles.length===0?t("no_articles"):t("no_results")}</p>` : ""}
+            ${notInCartFiltered.map(a=>articleOrderCardHTML(a)).join("")}
+          </div>
+        `;
+      })()}
       ${cartEntries.length>0 ? `
         <div class="stickybar">
           <div class="stack" style="gap:4px;margin-bottom:10px;">
@@ -3149,7 +3167,7 @@ function renderStock(){
     let sorted = state.stockFilterCodes.size>0
       ? state.articles.filter(a=>state.stockFilterCodes.has(a.code))
       : state.articles.filter(a=>!q || a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
-    if (state.stockFilterWarehouse) sorted = sorted.filter(a=>{
+    sorted = sorted.filter(a=>{
       const tot = articleTotals(a.code, stockUnitsForView);
       return tot.boxes>0 || tot.weight>0;
     });
@@ -3183,7 +3201,7 @@ function renderStock(){
     const groups = {};
     activeKeys.forEach(k=>{
       let arts = allGroups[k]||[];
-      if (state.stockFilterWarehouse) arts = arts.filter(a=>{
+      arts = arts.filter(a=>{
         const tot = articleTotals(a.code, stockUnitsForView);
         return tot.boxes>0 || tot.weight>0;
       });
