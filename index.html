@@ -1747,19 +1747,38 @@ function renderOrders(){
   const editingOrderNumber = state.editingOrderId ? (state.orders.find(o=>o.id===state.editingOrderId)?.order_number || "") : "";
   const cartEntries = Object.entries(state.cart).filter(([,q])=>q>0);
   const cartByArticle = {}; // code -> {name, boxes, weight, value}
+  const orphanItemsByArticle = {}; // code -> [{sscc, qty, weight, lot_code, bbd}] — lots στο καλάθι που δεν υπάρχουν πια στο απόθεμα
   let cartTotalBoxes = 0, cartTotalWeight = 0, cartTotalValue = 0;
   cartEntries.forEach(([sscc,qty])=>{
     const su = state.stockUnits.find(x=>x.sscc===sscc);
-    if (!su) return;
-    const a = state.articles.find(x=>x.code===su.article_code);
-    const ratio = su.volume_boxes > 0 ? (su.weight_kg / su.volume_boxes) : 0;
+    let articleCode, articleName, ratio, priceFallback;
+    if (su) {
+      articleCode = su.article_code;
+      const a = state.articles.find(x=>x.code===articleCode);
+      articleName = a?a.name:articleCode;
+      ratio = su.volume_boxes > 0 ? (su.weight_kg / su.volume_boxes) : 0;
+      priceFallback = a?.price_per_kg||0;
+    } else {
+      // Το lot αυτό δεν υπάρχει πια στο απόθεμα (π.χ. διαγράφηκε/καθαρίστηκε μετά την
+      // καταχώρηση της παραγγελίας) — χρησιμοποιούμε τα αποθηκευμένα στοιχεία της
+      // παραγγελίας, ώστε το είδος να συνεχίσει να φαίνεται στο "Σε αυτή την παραγγελία".
+      const orig = (state.editingOrderOriginalItems||[]).find(x=>x.sscc===sscc);
+      if (!orig) return;
+      articleCode = orig.article_code;
+      articleName = orig.article_name || articleCode;
+      ratio = orig.qty > 0 ? ((orig.weight||0) / orig.qty) : 0;
+      priceFallback = orig.price_per_kg || 0;
+      if (!orphanItemsByArticle[articleCode]) orphanItemsByArticle[articleCode] = [];
+      orphanItemsByArticle[articleCode].push({sscc, qty, weight: qty*ratio, lot_code: orig.lot_code, bbd: orig.bbd});
+    }
+    const a2 = state.articles.find(x=>x.code===articleCode);
     const weight = qty*ratio;
-    const effectivePrice = state.cartPrices[sscc] !== undefined ? state.cartPrices[sscc] : (a?.price_per_kg||0);
+    const effectivePrice = state.cartPrices[sscc] !== undefined ? state.cartPrices[sscc] : priceFallback;
     const value = effectivePrice*weight;
-    if (!cartByArticle[su.article_code]) cartByArticle[su.article_code] = {name:a?a.name:su.article_code, boxes:0, weight:0, value:0};
-    cartByArticle[su.article_code].boxes += qty;
-    cartByArticle[su.article_code].weight += weight;
-    cartByArticle[su.article_code].value += value;
+    if (!cartByArticle[articleCode]) cartByArticle[articleCode] = {name:a2?a2.name:articleName, boxes:0, weight:0, value:0};
+    cartByArticle[articleCode].boxes += qty;
+    cartByArticle[articleCode].weight += weight;
+    cartByArticle[articleCode].value += value;
     cartTotalBoxes += qty; cartTotalWeight += weight; cartTotalValue += value;
   });
 
@@ -1827,17 +1846,31 @@ function renderOrders(){
           const expanded = state.expandedArticle === a.code;
           const availLots = lotsWithAvail.sort((x,y)=>(x.l.bbd||"9999").localeCompare(y.l.bbd||"9999"));
           const inCart = cartByArticle[a.code];
+          const orphanLots = orphanItemsByArticle[a.code] || [];
           return `
           <div class="card${inCart?' in-cart':''}">
             <div class="row" style="cursor:pointer;" data-togglearticle="${a.code}">
               <div style="min-width:0;">
-                <div style="font-size:14px;font-weight:500;">${esc(a.name)}${inCart?` <span class="badge cart">${inCart.boxes} ${t("in_cart_badge")}</span>`:""}</div>
+                <div style="font-size:14px;font-weight:500;">${esc(a.name)}${inCart?` <span class="badge cart">${inCart.boxes} ${t("in_cart_badge")}</span>`:""}${orphanLots.length>0?` <span class="badge" style="background:rgba(220,80,80,0.18);color:#e05a5a;">${state.lang==='en'?'lot deleted':'το lot διαγράφηκε'}</span>`:""}</div>
                 <div class="muted">${esc(a.code)} · ${boxes} ${t("boxes_short")} · ${weight.toFixed(1)} ${t("kg")}${a.price?` · ${formatEUR(Number(a.price))}/${t("boxes_short")}`:""} · ${availLots.length} ${t("lots_count")}${availLots.length===1?"":"s"}</div>
               </div>
               <span class="muted2">${expanded?"▲":"▼"}</span>
             </div>
             ${expanded ? `
               <div class="stack" style="gap:0;">
+                ${orphanLots.map(o=>`
+                  <div class="lotrow">
+                    <div class="row">
+                      <div style="min-width:0;">
+                        <div style="font-size:13px;">Lot ${esc(o.lot_code||"—")} ${bbdBadge(o.bbd)}</div>
+                        <div class="muted" style="color:#e05a5a;">${state.lang==='en'?'This lot no longer exists in stock — it was deleted after this order was placed. You can only remove it.':'Αυτό το lot δεν υπάρχει πια στο απόθεμα — διαγράφηκε μετά την καταχώρηση της παραγγελίας. Μπορείς μόνο να το αφαιρέσεις.'} (${o.qty} ${t("boxes_short")} · ${o.weight.toFixed(1)} ${t("kg")})</div>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                        <button class="btn" data-removeorphan="${o.sscc}" style="font-size:12px;padding:6px 10px;">${state.lang==='en'?'Remove':'Αφαίρεση'}</button>
+                      </div>
+                    </div>
+                  </div>
+                `).join("")}
                 ${availLots.length===0?`<p class="muted" style="margin:8px 0 0;">${t("no_stock_available")}</p>`:""}
                 ${availLots.map(({l, avail})=>{
                   const qty = state.cart[l.sscc] || 0;
@@ -2019,7 +2052,14 @@ async function saveOrderEdits(){
   const items = [];
   for (const [sscc, qty] of cartEntries){
     const su = state.stockUnits.find(x=>x.sscc===sscc);
-    if (!su) continue;
+    if (!su) {
+      // Το lot αυτό δεν υπάρχει πια στο απόθεμα (διαγράφηκε μετά την αρχική καταχώρηση).
+      // Κρατάμε το είδος αμετάβλητο όπως ήταν, αντί να το χάσουμε σιωπηλά — ο χρήστης
+      // μπορεί μόνο να το αφαιρέσει ρητά με το κουμπί "Αφαίρεση".
+      const orig = (state.editingOrderOriginalItems||[]).find(x=>x.sscc===sscc);
+      if (orig) items.push({...orig, qty});
+      continue;
+    }
     if (availableBoxesForCustomer(su, state.customerId) < qty) return showToast(`${state.lang==='en'?'Reserved for another customer':'Κρατημένο για άλλον πελάτη'}: ${su.article_code} (lot ${su.lot_code||su.sscc})`);
     if (qty > su.volume_boxes) return showToast(`Ανεπαρκές απόθεμα στο lot ${su.lot_code||sscc}`);
     const a = state.articles.find(x=>x.code===su.article_code);
@@ -2039,6 +2079,7 @@ async function saveOrderEdits(){
 
   for (const it of items){
     const su = state.stockUnits.find(x=>x.sscc===it.sscc);
+    if (!su) continue; // lot που δεν υπάρχει πια στο απόθεμα — δεν έχει τι να ενημερωθεί
     const newBoxes = Math.max(0, su.volume_boxes - it.qty);
     const newWeight = Math.max(0, su.weight_kg - it.weight);
     const payload = {volume_boxes:newBoxes, weight_kg:newWeight};
@@ -3774,6 +3815,11 @@ function bindEvents(){
     if (el){ el.focus(); el.selectionStart = el.value.length; }
   };
 
+  root.querySelectorAll("[data-removeorphan]").forEach(b=>b.onclick=()=>{
+    const s=b.dataset.removeorphan;
+    delete state.cart[s]; delete state.cartPrices[s];
+    render();
+  });
   root.querySelectorAll("[data-lotqtyup]").forEach(b=>b.onclick=()=>{
     const s=b.dataset.lotqtyup, max=Number(b.dataset.max)||Infinity;
     state.cart[s]=Math.min(max,(state.cart[s]||0)+1); render();
