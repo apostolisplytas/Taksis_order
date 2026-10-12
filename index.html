@@ -703,8 +703,8 @@ async function fetchAllRows(table, applyFilters, selectCols){
 async function loadAll(){
   const tid = state.activeTenantId;
   const [aRes, sRes, cRes, oRes, iRes, bRes, wRes] = await Promise.all([
-    sb.from("articles").select("*").is("deleted_at", null).eq("tenant_id", tid).order("name"),
-    sb.from("stock_units").select("*").is("deleted_at", null).eq("tenant_id", tid),
+    fetchAllRows("articles", q => q.is("deleted_at", null).eq("tenant_id", tid).order("code")),
+    fetchAllRows("stock_units", q => q.is("deleted_at", null).eq("tenant_id", tid).order("sscc")),
     sb.from("customers").select("*").is("deleted_at", null).eq("tenant_id", tid).order("name"),
     sb.from("orders").select("*").is("deleted_at", null).eq("tenant_id", tid).order("created_at", {ascending:false}),
     fetchAllRows("incoming_shipments", q => q.is("deleted_at", null).eq("tenant_id", tid)),
@@ -4667,7 +4667,7 @@ async function doImportStock(){
   });
   let artErrors = 0;
   for (const [code,name] of Object.entries(articleMap)){
-    const payload = {code, name, tenant_id: state.activeTenantId};
+    const payload = {code, name, tenant_id: state.activeTenantId, deleted_at: null};
     if (priceMap[code] !== undefined) payload.price_per_kg = priceMap[code];
     const {error} = await sb.from("articles").upsert(payload, {onConflict:"code"});
     if (error){ console.error("article upsert error", code, error); artErrors++; }
@@ -4688,6 +4688,7 @@ async function doImportStock(){
       custom: Object.assign({}, r.custom || {}, normalizeEntity(r.entity) ? {entity: normalizeEntity(r.entity)} : {}),
       tenant_id: state.activeTenantId,
       warehouse_id: state.importWarehouseId || null,
+      deleted_at: null, // αν ο ίδιος SSCC είχε διαγραφεί/καθαριστεί παλιότερα, το re-import τον επαναφέρει
     };
     const {error} = await sb.from("stock_units").upsert(rec, {onConflict:"sscc"});
     if (error){ console.error("stock upsert error", rec.sscc, error); lotErrors++; lastError = error; }
