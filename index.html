@@ -1716,6 +1716,39 @@ function articleTotals(code, unitsOverride){
     availableWeight: lots.reduce((s,l)=>s+freeWeightInLot(l),0),
   };
 }
+// Διαγραφή (soft-delete, αναιρέσιμη) ΟΛΟΥ του ενεργού stock του τρέχοντος tenant, από ΟΛΕΣ τις αποθήκες,
+// συμπεριλαμβανομένων παρτίδων χωρίς αποθήκη (warehouse_id = null).
+async function eraseAllStock(){
+  const units = state.stockUnits;
+  if (units.length === 0) return showToast(state.lang==='en'?'There is no stock to erase.':'Δεν υπάρχει stock για διαγραφή.');
+  const boxes = units.reduce((s,u)=>s+(Number(u.volume_boxes)||0),0);
+  const byWh = {};
+  units.forEach(u=>{
+    const k = u.warehouse_id ? warehouseName(u.warehouse_id) : (state.lang==='en'?'(no warehouse)':'(χωρίς αποθήκη)');
+    byWh[k] = (byWh[k]||{lots:0,boxes:0}); byWh[k].lots++; byWh[k].boxes += Number(u.volume_boxes)||0;
+  });
+  const breakdown = Object.entries(byWh).map(([k,v])=>`  • ${k}: ${v.lots} παρτίδες, ${v.boxes} κιβώτια`).join("\n");
+  const msg = `Θα διαγραφούν ΟΛΕΣ οι παρτίδες stock από ΟΛΕΣ τις αποθήκες (${units.length} παρτίδες, ${boxes} κιβώτια):\n\n${breakdown}\n\nΤα είδη/τιμές παραμένουν. Μπορείς να το αναιρέσεις αμέσως μετά. Συνέχεια;`;
+  if (!confirm(msg)) return;
+  const ts = new Date().toISOString();
+  const {error} = await sb.from("stock_units").update({deleted_at: ts}).is("deleted_at", null).eq("tenant_id", state.activeTenantId);
+  if (error) return showToast(`Σφάλμα: ${error.message}`);
+  state.lastStockClearBatch = {ts, warehouseId: null, warehouseLabel: state.lang==='en'?'ALL warehouses':'ΟΛΕΣ οι αποθήκες', tenantId: state.activeTenantId};
+  await loadAll();
+  showToast(t("toast_stock_cleared"));
+}
+async function undoClearStock(){
+  const batch = state.lastStockClearBatch;
+  if (!batch) return;
+  let q = sb.from("stock_units").update({deleted_at: null}).eq("deleted_at", batch.ts);
+  if (batch.warehouseId) q = q.eq("warehouse_id", batch.warehouseId);
+  if (batch.tenantId) q = q.eq("tenant_id", batch.tenantId);
+  const {error} = await q;
+  if (error) return showToast(`Σφάλμα επαναφοράς: ${error.message}`);
+  state.lastStockClearBatch = null;
+  await loadAll();
+  showToast(t("toast_restored"));
+}
 function filterUnitsByWarehouse(units, warehouseId){
   return warehouseId ? units.filter(u=>u.warehouse_id===warehouseId) : units;
 }
@@ -3239,6 +3272,19 @@ function renderStock(){
       </div>
     </div>
   `;
+  const eraseAllHTML = `
+    <div class="card" style="border-color:var(--border2);">
+      <div class="row" style="flex-wrap:wrap;gap:8px;">
+        <span class="muted">${state.lang==='en'?'Remove all stock lots from every warehouse (undoable).':'Διαγραφή όλων των παρτίδων stock από όλες τις αποθήκες (αναιρείται).'}</span>
+        <button class="btn btn-danger-outline" id="eraseAllStockBtn">🗑 ${state.lang==='en'?'Erase all stock':'Erase all stock'}</button>
+      </div>
+      ${state.lastStockClearBatch ? `
+        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px;">
+          <span style="font-size:12px;color:var(--amber-bright);">${state.lang==='en'?'Stock cleared':'Καθαρίστηκε το stock'}${state.lastStockClearBatch.warehouseLabel?` (${esc(state.lastStockClearBatch.warehouseLabel)})`:''} — ${state.lang==='en'?'you can undo this.':'μπορείς να το αναιρέσεις.'}</span>
+          <button class="btn" id="undoClearStockBtn2">↺ ${state.lang==='en'?'Undo':'Αναίρεση'}</button>
+        </div>` : ""}
+    </div>
+  `;
   const reservedFilterHTML = `
     <div class="card" style="border-color:var(--border2);">
       <div class="chipwrap">
@@ -3466,6 +3512,7 @@ function renderStock(){
       ${warehouseFilterBarHTML}
       ${entityFilterHTML}
       ${reservedFilterHTML}
+      ${eraseAllHTML}
       <div class="grid2">
         <div class="stat"><div class="muted">${t("stock_total_boxes")}</div><div class="v">${totalBoxes}</div></div>
         <div class="stat"><div class="muted">${t("stock_total_kg")}</div><div class="v">${totalWeight.toFixed(1)}</div></div>
@@ -4062,17 +4109,11 @@ function bindEvents(){
     showToast(t("toast_stock_cleared"));
   };
   const undoClearStockBtn = document.getElementById("undoClearStockBtn");
-  if (undoClearStockBtn) undoClearStockBtn.onclick = async () => {
-    const batch = state.lastStockClearBatch;
-    if (!batch) return;
-    let q = sb.from("stock_units").update({deleted_at: null}).eq("deleted_at", batch.ts);
-    if (batch.warehouseId) q = q.eq("warehouse_id", batch.warehouseId);
-    const {error} = await q;
-    if (error) return showToast(`Σφάλμα επαναφοράς: ${error.message}`);
-    state.lastStockClearBatch = null;
-    await loadAll();
-    showToast(t("toast_restored"));
-  };
+  if (undoClearStockBtn) undoClearStockBtn.onclick = undoClearStock;
+  const undoClearStockBtn2 = document.getElementById("undoClearStockBtn2");
+  if (undoClearStockBtn2) undoClearStockBtn2.onclick = undoClearStock;
+  const eraseAllStockBtn = document.getElementById("eraseAllStockBtn");
+  if (eraseAllStockBtn) eraseAllStockBtn.onclick = eraseAllStock;
   const importWarehouseSelect = document.getElementById("importWarehouseSelect");
   if (importWarehouseSelect) importWarehouseSelect.onchange = e => { state.importWarehouseId = e.target.value; };
 
