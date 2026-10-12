@@ -539,7 +539,7 @@ let state = {
   showImportIncoming: false, incomingImporting: false, expandedIncomingGroups: new Set(),
   warehouses: [],
   stockFilterWarehouse: "", orderWarehouseId: "", importWarehouseId: "",
-  stockFilterReservedOnly: false,
+  stockFilterReservedOnly: false, stockFilterEntity: "",
   orderDeliveryDate: "",
   historySentFilter: "",
   lastStockClearBatch: null, // {ts, warehouseId, warehouseLabel} — για αναίρεση καθαρισμού stock
@@ -661,7 +661,7 @@ function applyTenantBranding(){
 }
 async function switchActiveTenant(tenantId){
   state.activeTenantId = tenantId;
-  state.orderWarehouseId = ""; state.importWarehouseId = ""; state.stockFilterWarehouse = "";
+  state.orderWarehouseId = ""; state.importWarehouseId = ""; state.stockFilterWarehouse = ""; state.stockFilterEntity = "";
   await loadActiveTenantConfig();
   await loadAll();
 }
@@ -785,6 +785,7 @@ const STOCK_ALIASES = {
   lot: ["lotcode","lot"],
   bbd: ["bbd","expiry","expirationdate","bestbefore","bestbeforedate"],
   reference: ["reference","ref"],
+  entity: ["entity","legalentity","company","empresa","sociedade","society"],
   priceperkg: ["priceperkg","pricekg","avgpriceperkg","averagepriceperkg","unitpriceperkg","timikilo","timianakilo","averageprice","avgprice","price"],
 };
 const CUSTOMER_ALIASES = {
@@ -819,6 +820,7 @@ function guessCanonical(rawHeader, aliasSet){
     if (n.includes("lot")) return "lot";
     if (n.includes("bbd") || n.includes("expir") || n.includes("bestbefore")) return "bbd";
     if (n.includes("reference") || n === "ref") return "reference";
+    if (n.includes("entity") || n === "company" || n.includes("empresa") || n.includes("sociedad")) return "entity";
     if (n.includes("price") || n.includes("timi")) return "priceperkg";
   } else {
     if (n.includes("code")) return "code";
@@ -846,6 +848,16 @@ function buildCanonicalMap(aliasDict){
   });
   return map;
 }
+// Κανονικοποίηση της τιμής "entity" του αρχείου σε GR / PT (αλλιώς την αφήνουμε όπως είναι, σε κεφαλαία).
+function normalizeEntity(v){
+  const x = String(v||"").trim().toUpperCase();
+  if (!x) return "";
+  if (x === "PT" || x.includes("PORTUG")) return "PT";
+  if (x === "GR" || x.includes("GREEC") || x.includes("HELLA") || x.includes("ΕΛΛ")) return "GR";
+  return x;
+}
+function entityOf(u){ return (u && u.custom && u.custom.entity) ? String(u.custom.entity) : ""; }
+function filterUnitsByEntity(units, entity){ return entity ? units.filter(u=>entityOf(u)===entity) : units; }
 function parseStockTable(raw){
   const {headersRaw, rows} = splitTable(raw);
   const canonicalFor = buildCanonicalMap(STOCK_ALIASES);
@@ -1318,7 +1330,7 @@ function exportArticleStatsPDF(){
 // (Ανά προϊόν / κωδικό / κατηγορία / ημ. λήξης / επόμενες 30 ημέρες), ώστε η εξαγωγή να
 // αντιστοιχεί ακριβώς σε αυτό που βλέπει ο χρήστης στην οθόνη.
 function getStockExportPairs(){
-  let baseUnits = filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse);
+  let baseUnits = filterUnitsByEntity(filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse), state.stockFilterEntity);
   if (state.stockFilterReservedOnly) baseUnits = baseUnits.filter(u=>reservedBoxesOf(u) > 0);
   let pairs = baseUnits
     .filter(u=>(u.volume_boxes>0||u.weight_kg>0))
@@ -3187,7 +3199,7 @@ function renderTrash(){
 }
 
 function renderStock(){
-  let stockUnitsForView = filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse);
+  let stockUnitsForView = filterUnitsByEntity(filterUnitsByWarehouse(state.stockUnits, state.stockFilterWarehouse), state.stockFilterEntity);
   if (state.stockFilterReservedOnly) stockUnitsForView = stockUnitsForView.filter(u=>reservedBoxesOf(u) > 0);
   const totalBoxes = stockUnitsForView.reduce((s,u)=>s+(Number(u.volume_boxes)||0),0);
   const totalWeight = stockUnitsForView.reduce((s,u)=>s+(Number(u.weight_kg)||0),0);
@@ -3217,6 +3229,16 @@ function renderStock(){
     </div>
   `;
 
+  const entitiesPresent = [...new Set(state.stockUnits.map(entityOf).filter(Boolean))].sort();
+  const entityFilterHTML = entitiesPresent.length===0 ? "" : `
+    <div class="card" style="border-color:var(--border2);">
+      <span class="muted" style="text-transform:uppercase;letter-spacing:0.5px;">Entity</span>
+      <div class="chipwrap" style="margin-top:6px;">
+        <button type="button" class="chip ${!state.stockFilterEntity?'active':''}" data-entityfilterchip="">${state.lang==='en'?'All':'Όλα'}</button>
+        ${entitiesPresent.map(en=>`<button type="button" class="chip ${state.stockFilterEntity===en?'active':''}" data-entityfilterchip="${esc(en)}">${esc(en)}</button>`).join("")}
+      </div>
+    </div>
+  `;
   const reservedFilterHTML = `
     <div class="card" style="border-color:var(--border2);">
       <div class="chipwrap">
@@ -3442,6 +3464,7 @@ function renderStock(){
         <button class="btn" id="exportStockPdfBtn">${t("export_pdf")}</button>
       </div>
       ${warehouseFilterBarHTML}
+      ${entityFilterHTML}
       ${reservedFilterHTML}
       <div class="grid2">
         <div class="stat"><div class="muted">${t("stock_total_boxes")}</div><div class="v">${totalBoxes}</div></div>
@@ -4058,6 +4081,10 @@ function bindEvents(){
     state.stockFilterWarehouse = chip.dataset.whfilterchip || "";
     render();
   });
+  root.querySelectorAll("[data-entityfilterchip]").forEach(chip=>chip.onclick=()=>{
+    state.stockFilterEntity = chip.dataset.entityfilterchip || "";
+    render();
+  });
   const toggleWarehouseManagerBtn = document.getElementById("toggleWarehouseManagerBtn");
   if (toggleWarehouseManagerBtn) toggleWarehouseManagerBtn.onclick = () => { state.showWarehouseManager = !state.showWarehouseManager; render(); };
   const toggleReservedOnlyChip = document.getElementById("toggleReservedOnlyChip");
@@ -4617,7 +4644,7 @@ async function doImportStock(){
       lot_code: r.lot || "",
       bbd: parseDateFlexible(r.bbd),
       reference: r.reference || "",
-      custom: r.custom || {},
+      custom: Object.assign({}, r.custom || {}, normalizeEntity(r.entity) ? {entity: normalizeEntity(r.entity)} : {}),
       tenant_id: state.activeTenantId,
       warehouse_id: state.importWarehouseId || null,
     };
